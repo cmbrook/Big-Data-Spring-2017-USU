@@ -4,12 +4,14 @@ library(Metrics)
 library(glmnet)
 library(ggplot2)
 library(caret)
+library(xgboost)
+library(randomForest)
 HP.train <- read.csv('train.csv', sep = ',', header = TRUE)
 HP.test <- read.csv('test.csv', sep = ',', header = TRUE)
 HP.train$Id <- NULL
 HP.test.Id <- HP.test$Id
 HP.test$Id <- NULL
-HP.test$SalePrice <- replicate(nrow(HP.test), -1)
+HP.test$SalePrice <- replicate(nrow(HP.test), 0)
 ntrain <- nrow(HP.train)
 ntest <- nrow(HP.test)
 HP.all <- rbind(HP.train, HP.test)
@@ -97,15 +99,16 @@ do_variable_selection <- function(dataSet)
     
 }
 
-build_model <- function(train, type = 2)
+build_model <- function(train, type = 2, transformed = FALSE)
 {
+  
   if (type == 1) {
     #multiple linear regression model
     fit <- lm(SalePrice ~., train)  
     fit$rsquared <- summary(fit)$r.squared
     fit$adj.rsquared <- summary(fit)$adj.r.squared
     fit$predicted <- fit$fitted.values
-    
+      
   }
   if (type == 2) {
     #add elastic net regularization to reduce model overfitting
@@ -126,9 +129,32 @@ build_model <- function(train, type = 2)
     plot(fit)
     # fit$predicted <- as.vector(fit$predicted)
   }
-  fit$actual <- train$SalePrice
-  fit$rmse <- rmse(actual = fit$actual, predicted  = fit$predicted)
-  print(paste0('RMSE of training :',fit$rmse))
+  if (type == 4) {
+    #xgboost here
+    param <- list(max.depth=2,eta=0.1,nthread = 8, silent=1,objective='reg:linear')
+    #param <- list(max.depth = 4,verbose = FALSE, eta = 0.1, nthread = 8, objective = "binary:logistic",task="pred")
+    dataAll <- xgb.DMatrix(data=data.matrix(train[,1:(ncol(train)-1)]), 
+                           label=data.matrix(train[,ncol(train)]))
+    
+    res <- xgb.cv(params = param, data = dataAll,  nrounds = 1000, nfold = 10, 
+                  prediction = TRUE, eval_metric="rmse", verbose = TRUE)
+    max_round = which.min(res$dt[, test.rmse.mean])
+    rmse <- res$dt[, test.rmse.mean][max_round]
+    
+    fit <- xgboost(params = param, data=dataAll, nrounds = max_round)
+  }
+  if (type != 4) {
+    fit$actual <- train$SalePrice
+    if (transformed) {
+      #reconvert
+      fit$predicted <- reverse_transformed_response(fit$predicted)
+      fit$actual <- reverse_transformed_response(fit$actual)
+    }  
+    
+    fit$rmse <- rmse(actual = fit$actual, predicted  = fit$predicted)
+    fit$mse <- mse(actual = fit$actual, predicted  = fit$predicted)
+    print(paste0('RMSE of training :',fit$rmse))
+  }
   return(fit)
 }
 do_transform <- function(dataSet)
@@ -140,8 +166,12 @@ do_transform <- function(dataSet)
       dataSet[,i] <- log(dataSet[,i] + 1)
     }
   }
+  dataSet[,ncol(dataSet)] <- log(dataSet[,ncol(dataSet)] + 1)
   return(dataSet)
-  
+}
+reverse_transformed_response <- function(response)
+{
+  return(exp(response) - 1)
 }
 evaluate_model <- function(model, test)
 {
@@ -171,26 +201,61 @@ check_categorical_variables(HP.train)
 HP.all <- encode_categorical_variables(HP.all)
 print ('check categorical values of the dataframe after encoding. Should print blank')
 check_categorical_variables(HP.all)
+
+#reconstruct some variables:
+HP.all <- mutate(HP.all,
+                 house_age = YrSold + MoSold/12 - YearBuilt,
+                 remodel_house_age = abs(YearRemodAdd - YearBuilt),
+                 gara_age = abs(GarageYrBlt - YearBuilt),
+                 sold_year_to_now = 2017 - YrSold - MoSold/12,
+                 built_year_to_now = 2017 - YearBuilt
+                 
+)
+SalePrice <- HP.all$SalePrice
+HP.all$SalePrice <- NULL
+HP.all$SalePrice <- SalePrice
+HP.all$GarageYrBlt <- NULL
+HP.all$YearBuilt <- NULL
+HP.all$YearRemodAdd <- NULL
+HP.all$YrSold <- NULL
+HP.all$MoSold <- NULL
 #************************************************************************************************************************************#
+
 #do transformation on variables?
-HP.all <- do_transform(HP.all)
+do_transformation <- TRUE
+if (do_transformation) {
+  HP.all <- do_transform(HP.all)
+}
 
 
 HP.train = HP.all[1:ntrain,]
 HP.test = HP.all[(ntrain+1) : nrow(HP.all),]
 HP.test$SalePrice <- NULL
 
+for (i in 1:ncol(HP.train)) {
+  if (sum(is.nan(HP.train[,i])) > 0 || sum(is.infinite(HP.train[,i])) > 0 ) {
+    print (i)
+  }
+}
+for (i in 1:ncol(HP.test)) {
+  if (sum(is.nan(HP.test[,i])) > 0 || sum(is.infinite(HP.test[,i])) > 0 ) {
+    print (i)
+  }
+}
 
 print ('Building multiple linear regression model')
-HP.train.lr_model <- build_model(HP.train, type = 1)
+HP.train.lr_model <- build_model(HP.train, type = 1, transformed = do_transformation)
 print ('Building glmnet model')
-HP.train.glmnet_model <- build_model(HP.train, type = 2)
+HP.train.glmnet_model <- build_model(HP.train, type = 2, transformed = do_transformation)
 print ('Building random forest model')
-HP.train.rf_model <- build_model(HP.train, type = 3)
+# HP.train.rf_model <- build_model(HP.train, type = 3, transformed = do_transformation)
+print ('Building xgboost model')
+HP.train.xgb_model <- build_model(HP.train, type = 4, transformed = do_transformation)
 
 print('Choosing?')
-HP.test$SalePrice <- predict(HP.train.rf_model, as.matrix(HP.test))
+HP.test$SalePrice <- predict(HP.train.xgb_model, as.matrix(HP.test))
 
+if (do_transformation) HP.test$SalePrice <- reverse_transformed_response(HP.test$SalePrice)
 #write to file
 submission <- data.frame(Id <- HP.test.Id, SalePrice <- HP.test$SalePrice)
 names(submission) <- c('Id', 'SalePrice')
