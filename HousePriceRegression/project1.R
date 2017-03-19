@@ -4,8 +4,12 @@ library(Metrics)
 library(glmnet)
 library(ggplot2)
 library(caret)
+<<<<<<< HEAD
 library(xgboost)
 library(randomForest)
+=======
+library(car)
+>>>>>>> origin/master
 HP.train <- read.csv('train.csv', sep = ',', header = TRUE)
 HP.test <- read.csv('test.csv', sep = ',', header = TRUE)
 HP.train$Id <- NULL
@@ -194,6 +198,108 @@ HP.all <- deal_missing_values(HP.all, ntrain)
 print ('check missing values of the dataframe after replacing missing values. Should print blank')
 check_missing_values(HP.all)
 
+#***************************************************************************************************************
+###############2. Linear regression model with untransformed sale price data and residual analysis ######################
+#***************************************************************************************************************
+
+HP.train<-deal_missing_values(HP.train)
+
+
+HP.train.lr_model <- lm(SalePrice~., HP.train)
+
+
+### Residual Plots
+
+#Residual vs Fitted Plot
+plot(HP.train.lr_model, which=1)
+#There's a pretty clear expansion in variance once the 
+# sale price goes above 3e+05. Makes sense, since there 
+#are fewer homes at that price range.
+#The base r plots point out some outliers too, obs. # 826, 1325, 524
+
+summary(HP.train.lr_model)
+#QQ plot
+plot(HP.train.lr_model, which=2)
+
+#QQ plot looks pretty bad at the tails. 
+#826 and 524 are again noted as outliers
+
+#fitted values by square root of standardized residuals
+plot(HP.train.lr_model, which=3)
+
+#error clearly increases at higher ends of sale price
+
+#cook's distance
+plot(HP.train.lr_model, which=4)
+#3 outliers in terms of cook's distance: 524, 1171, and 1424
+
+#Leverage vs. standardized residuals
+plot(HP.train.lr_model, which=5)
+#observations with high leverage and high standardized residuals 
+# are the same that have high cook's d
+
+#We have five clear outliers that need looking at. Log transform should help.
+#These are: 524,826,1171,1325, 1424
+
+build_model(HP.train, type = 1)
+
+
+#Since I have the linear model code up and running here and Thanh already made all this 
+#lovely code for us, I'll just run it with the log-transform on sale price. 
+
+#***************************************************************************************************************
+###############3. Linear regression model with log transform of sale price data and residual analysis ######################
+#***************************************************************************************************************
+
+
+HP.trainlog<-HP.train %>% mutate(logSalePrice=log(SalePrice)) %>% select (-SalePrice)
+
+HP.train_logtrans_mod<-lm(logSalePrice ~., HP.trainlog)
+
+#Same Plots again
+
+#outliers from untransformed were 524,826,1171,1325, 1424
+
+#residuals vs fitted
+plot(HP.train_logtrans_mod, which=1, id.n=5)
+# Residuals over .5 also now include observations 633 and 463
+
+
+#An alternate method for seeing the labels for all residuals, since r only prints
+#a given number of extreme values
+# logtransmod<-data.frame(HP.train_logtrans_mod$residuals,
+#                         HP.train_logtrans_mod$fitted.values,
+#                         HP.trainlog$logSalePrice)
+# colnames(logtransmod)<-c("residuals","predicted","logSalePrice")
+# logtransmod$obs<-as.character(1:1460)
+# 
+# logtransmod %>% 
+# ggplot(aes(x=predicted,y=residuals, label=obs))+geom_text()
+
+
+plot(HP.train_logtrans_mod, which=2, id.n=6)
+
+#observation 89 shows up as overestimating the price based on the trend line
+#of the quantiles. The QQ plot for this model does not look much better than previous
+
+plot(HP.train_logtrans_mod, which=3)
+#The scale-location plot looks far better for this model, although error is slightly 
+#higher at the lower end now. The same outliers are identified
+
+plot(HP.train_logtrans_mod, which=4)
+#89 is now identified as an influential observation by cook's distance
+
+plot(HP.train_logtrans_mod, which=5)
+#Only a few observations with high leverage and high standardized residuals, which
+#we already knew about.
+
+summary(HP.train_logtrans_mod)
+
+summary(HP.train.lr_model)
+
+#Comparing with the untransformed model, we get a higher adjusted R-squared and a higher
+#F statistic when predicting the log transform of sale price. 
+
 #************************************************************************************************************************************#
 ####################### 2. Encoding categorical variables ############################################################################
 check_categorical_variables(HP.train)
@@ -244,7 +350,16 @@ for (i in 1:ncol(HP.test)) {
 }
 
 print ('Building multiple linear regression model')
+<<<<<<< HEAD
 HP.train.lr_model <- build_model(HP.train, type = 1, transformed = do_transformation)
+=======
+HP.train.lr_model <- build_model(HP.train, type = 1)
+
+
+
+
+
+>>>>>>> origin/master
 print ('Building glmnet model')
 HP.train.glmnet_model <- build_model(HP.train, type = 2, transformed = do_transformation)
 print ('Building random forest model')
