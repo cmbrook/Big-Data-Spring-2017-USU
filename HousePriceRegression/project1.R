@@ -4,12 +4,10 @@ library(Metrics)
 library(glmnet)
 library(ggplot2)
 library(caret)
-<<<<<<< HEAD
 library(xgboost)
 library(randomForest)
-=======
 library(car)
->>>>>>> origin/master
+
 HP.train <- read.csv('train.csv', sep = ',', header = TRUE)
 HP.test <- read.csv('test.csv', sep = ',', header = TRUE)
 HP.train$Id <- NULL
@@ -350,16 +348,9 @@ for (i in 1:ncol(HP.test)) {
 }
 
 print ('Building multiple linear regression model')
-<<<<<<< HEAD
+
 HP.train.lr_model <- build_model(HP.train, type = 1, transformed = do_transformation)
-=======
-HP.train.lr_model <- build_model(HP.train, type = 1)
 
-
-
-
-
->>>>>>> origin/master
 print ('Building glmnet model')
 HP.train.glmnet_model <- build_model(HP.train, type = 2, transformed = do_transformation)
 print ('Building random forest model')
