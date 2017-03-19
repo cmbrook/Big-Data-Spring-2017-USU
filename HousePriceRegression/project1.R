@@ -171,17 +171,6 @@ check_missing_values(HP.all)
 
 HP.train<-deal_missing_values(HP.train)
 
-do_recode_nas_to_none<-function(dataSet=HP.train) {
-nas<-which(is.na(dataSet)==TRUE)
-
-data.cat<-as.matrix(dataSet)
-data.temp[nas]<-"none"
-data.recoded<-as.data.frame(data.temp)
-
-return(data.recoded)
-}
-
-HP.train1<-do_recode_nas_to_none()
 
 HP.train.lr_model <- lm(SalePrice~., HP.train)
 
