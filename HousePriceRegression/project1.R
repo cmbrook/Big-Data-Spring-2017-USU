@@ -54,8 +54,9 @@ deal_missing_values <- function(dataSet, ntrain = 1460, type = 1)
     # check if variables have a factor:
     if(!is.factor(x)) {
       #replace NA by mean
-      if (type == 1) x[is.na(x)] <- mean(x[1:1460], na.rm = TRUE) 
-      else if (type == 2) if (type == 1) x[is.na(x)] <- median(x[1:1460], na.rm = TRUE) 
+      x[is.na(x)] <- mean(x[1:1460], na.rm = TRUE) 
+      # if (type == 1) x[is.na(x)] <- mean(x[1:1460], na.rm = TRUE) 
+      # else if (type == 2) if (type == 1) x[is.na(x)] <- median(x[1:1460], na.rm = TRUE) 
     }
     else {
       # otherwise include NAs into factor levels and change factor levels:
@@ -239,7 +240,7 @@ draw_boxplot <- function(data)
 
 ####################### 1. Dealing with missing values for training and testing data #################################################
 check_missing_values(HP.all)
-HP.all <- deal_missing_values(HP.all, ntrain)
+HP.all <- deal_missing_values(HP.all, ntrain,type = 2)
 print ('check missing values of the dataframe after replacing missing values. Should print blank')
 check_missing_values(HP.all)
 #outliers
@@ -381,13 +382,14 @@ HP.all$MoSold <- NULL
 #************************************************************************************************************************************#
 
 #do transformation on variables?
+
+
+
+HP.all <- do_variable_selection(HP.all)
 do_transformation <- TRUE
 if (do_transformation) {
   HP.all <- do_transform(HP.all)
 }
-
-
-HP.all <- do_variable_selection(HP.all)
 HP.train = HP.all[1:ntrain,]
 HP.test = HP.all[(ntrain+1) : nrow(HP.all),]
 HP.test$SalePrice <- NULL
@@ -410,12 +412,12 @@ HP.train.lr_model <- build_model(HP.train, type = 1, transformed = do_transforma
 print ('Building glmnet model')
 HP.train.glmnet_model <- build_model(HP.train, type = 2, transformed = do_transformation)
 print ('Building random forest model')
-HP.train.rf_model <- build_model(HP.train, type = 3, transformed = do_transformation)
+# HP.train.rf_model <- build_model(HP.train, type = 3, transformed = do_transformation)
 print ('Building xgboost model')
-# HP.train.xgb_model <- build_model(HP.train, type = 4, transformed = do_transformation)
+HP.train.xgb_model <- build_model(HP.train, type = 4, transformed = do_transformation)
 
 print('Choosing?')
-HP.test$SalePrice <- predict(HP.train.rf_model, as.matrix(HP.test))
+HP.test$SalePrice <- predict(HP.train.xgb_model, as.matrix(HP.test))
 
 if (do_transformation) HP.test$SalePrice <- reverse_transformed_response(HP.test$SalePrice)
 #write to file
