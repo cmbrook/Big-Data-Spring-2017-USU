@@ -105,8 +105,25 @@ deal_outliers <- function(dataSet)
 
 do_variable_selection <- function(dataSet)
 {
-  #must return a dataframe in which important variables are kept.
-    
+  trainData <- dataSet[1:ntrain,]
+  logSalePrice <- log(trainData$SalePrice)
+  trainData <- cbind(trainData, logSalePrice)
+  trainData$SalePrice <- NULL
+  trainData.cv.lasso = cv.glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
+                             y=as.matrix(trainData[,ncol(trainData)]), alpha = 1)
+  names(trainData.cv.lasso$lambda.1se)="Lambda 1 SE:"
+  trainData.cv.lasso$lambda.1se
+  trainData.lasso = glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
+                           y=as.matrix(trainData[,ncol(trainData)]), alpha = 1)
+  co <- coef(trainData.lasso, s = trainData.cv.lasso$lambda.1se)
+  co <- co[2:nrow(co),] #remove the coefficient of intercept, which is the first row
+  trainData <- trainData[, co > 0]
+  vars <- names(trainData)
+  print('Important variables:')
+  print(vars)
+  vars <- c(vars, 'SalePrice')
+  dataSet <- subset(dataSet, select = vars)
+  return(dataSet)
 }
 
 build_model <- function(train, type = 2, transformed = FALSE)
@@ -227,12 +244,13 @@ print ('check missing values of the dataframe after replacing missing values. Sh
 check_missing_values(HP.all)
 #outliers
 # draw_boxplot(HP.all)
-print(paste0('Before removing outliers, number of observations: ', nrow(HP.train)))
-HP.train <- HP.all[1:ntrain,]
-HP.train <- deal_outliers(HP.train)
-print(paste0('After removing outliers, number of observations: ', nrow(HP.train)))
-ntrain <- nrow(HP.train)
-HP.all <- rbind(HP.train, HP.test)
+# print(paste0('Before removing outliers, number of observations: ', nrow(HP.train)))
+# HP.train <- HP.all[1:ntrain,]
+# HP.train <- deal_outliers(HP.train)
+# print(paste0('After removing outliers, number of observations: ', nrow(HP.train)))
+# ntrain <- nrow(HP.train)
+# HP.all <- rbind(HP.train, HP.test)
+
 #***************************************************************************************************************
 ###############2. Linear regression model with untransformed sale price data and residual analysis ######################
 #***************************************************************************************************************
@@ -369,6 +387,7 @@ if (do_transformation) {
 }
 
 
+HP.all <- do_variable_selection(HP.all)
 HP.train = HP.all[1:ntrain,]
 HP.test = HP.all[(ntrain+1) : nrow(HP.all),]
 HP.test$SalePrice <- NULL
@@ -391,12 +410,12 @@ HP.train.lr_model <- build_model(HP.train, type = 1, transformed = do_transforma
 print ('Building glmnet model')
 HP.train.glmnet_model <- build_model(HP.train, type = 2, transformed = do_transformation)
 print ('Building random forest model')
-# HP.train.rf_model <- build_model(HP.train, type = 3, transformed = do_transformation)
+HP.train.rf_model <- build_model(HP.train, type = 3, transformed = do_transformation)
 print ('Building xgboost model')
-HP.train.xgb_model <- build_model(HP.train, type = 4, transformed = do_transformation)
+# HP.train.xgb_model <- build_model(HP.train, type = 4, transformed = do_transformation)
 
 print('Choosing?')
-HP.test$SalePrice <- predict(HP.train.xgb_model, as.matrix(HP.test))
+HP.test$SalePrice <- predict(HP.train.rf_model, as.matrix(HP.test))
 
 if (do_transformation) HP.test$SalePrice <- reverse_transformed_response(HP.test$SalePrice)
 #write to file
