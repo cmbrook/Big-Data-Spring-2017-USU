@@ -7,6 +7,7 @@ library(caret)
 library(xgboost)
 library(randomForest)
 library(car)
+library(reshape2)
 
 HP.train <- read.csv('train.csv', sep = ',', header = TRUE)
 HP.test <- read.csv('test.csv', sep = ',', header = TRUE)
@@ -92,7 +93,14 @@ encode_categorical_variables <- function(dataSet, ntrain=1460)
 
 deal_outliers <- function(dataSet)
 {
-  
+  for (i in 1:ncol(dataSet)) {
+    if (is.numeric(dataSet[,i])) {
+      lower_bound = as.integer(quantile(dataSet[,i], .25) - 1.5*IQR(dataSet[,i]))
+      upper_bound = as.integer(quantile(dataSet[,i], .75) + 1.5*IQR(dataSet[,i]))
+      dataSet <- dataSet[dataSet[,i] >  lower_bound & dataSet[,i] < upper_bound, ]
+    }
+  }
+  return(dataSet)
 }
 
 do_variable_selection <- function(dataSet)
@@ -183,6 +191,28 @@ evaluate_model <- function(model, test)
   
 }
 
+draw_boxplot <- function(data)
+{
+  vars <- c()
+  for(i in 1:ncol(data)) {
+    if (is.numeric(data[,i])) vars <- c(vars, names(data)[i])
+  }
+  group_size = 2
+  steps = seq(1,length(vars), group_size)
+  if (steps[length(steps)] < length(vars)) steps <- c(steps, length(vars) + 1)
+  dev.off()
+  #grouping 4 in a plot
+  for(i in 1:(length(steps) - 1)) {
+    from = steps[i]
+    to = steps[i + 1]
+    labels <- vars[from : (to - 1)]
+    data_reshape <- melt(data[,labels], measure.vars = labels)
+    p <- ggplot(data_reshape) + geom_boxplot(aes(x=variable, y=value, color=variable))
+    print(p)  
+  }
+  
+}
+
 
 #missing values: categorical + numeric values. Numeric values can be replaced by mean, median for ease.
 #outliers: do later.
@@ -195,7 +225,14 @@ check_missing_values(HP.all)
 HP.all <- deal_missing_values(HP.all, ntrain)
 print ('check missing values of the dataframe after replacing missing values. Should print blank')
 check_missing_values(HP.all)
-
+#outliers
+# draw_boxplot(HP.all)
+print(paste0('Before removing outliers, number of observations: ', nrow(HP.train)))
+HP.train <- HP.all[1:ntrain,]
+HP.train <- deal_outliers(HP.train)
+print(paste0('After removing outliers, number of observations: ', nrow(HP.train)))
+ntrain <- nrow(HP.train)
+HP.all <- rbind(HP.train, HP.test)
 #***************************************************************************************************************
 ###############2. Linear regression model with untransformed sale price data and residual analysis ######################
 #***************************************************************************************************************
