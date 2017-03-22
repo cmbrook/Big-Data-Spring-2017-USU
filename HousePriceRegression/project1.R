@@ -389,6 +389,9 @@ HP.all$MoSold <- NULL
 
 #do transformation on variables?
 HP.all <- do_variable_selection(HP.all)
+
+
+
 do_transformation <- TRUE
 if (do_transformation) {
   HP.all <- do_transform(HP.all)
@@ -404,11 +407,67 @@ for (i in 1:ncol(HP.train)) {
     print (i)
   }
 }
+
 for (i in 1:ncol(HP.test)) {
   if (sum(is.nan(HP.test[,i])) > 0 || sum(is.infinite(HP.test[,i])) > 0 ) {
     print (i)
   }
 }
+
+#*******************************************************************************
+###Multiple linear regression model with lassoed variables
+#Make a new dataset with log of sale price
+HP.trainlog_sub<-HP.train %>% mutate(logSalePrice=log(SalePrice)) %>% select(-SalePrice)
+
+#Run a linear model on the log of sale price
+HP_subset_linmod<-lm(logSalePrice ~ ., data=HP.trainlog_sub)
+
+#View summary of model, R-Squared is still good
+summary(HP_subset_linmod)
+
+plot(HP_subset_linmod,which=1)
+# a few houses are severely overestimated. Why is this?
+#Check out cases 633, 524, and 1299, increasing in order of severity
+
+plot(HP_subset_linmod, which=2)
+#same three outliers show up in qq plot, unsurprisingly
+
+plot(HP_subset_linmod,which=3)
+
+plot(HP_subset_linmod, which=4)
+#note that from this plot, 31 may also be an outlier, but if it is overestimated
+#we may not need to worry about it
+
+plot(HP_subset_linmod, which=5)
+
+#a few highly influential points are driving our regression
+
+#Look at these three points in detail
+HP.train[c(524,633,1299),]
+
+#Let's see what happens when we remove the three outliers that are clearly out of
+#whack with our other points
+no_outliers<-c(1:523,525:632,634:1298,1300:1460)
+
+HP_subset_linmod_noout<-lm(logSalePrice ~ ., 
+                           data=HP.trainlog_sub,
+                           subset=no_outliers)
+
+
+summary(HP_subset_linmod_noout)
+
+plot(HP_subset_linmod_noout,which=1)
+plot(HP_subset_linmod_noout,which=2)
+plot(HP_subset_linmod_noout,which=3)
+plot(HP_subset_linmod_noout, which=4)
+
+#When we remove those 3 points, the residuals look a lot
+# better, our adjusted R-squared goes up, and our
+# betas change a good deal. 
+
+#I'm not saying we have to do that, just that we should
+#consider it as an option. 
+
 
 print ('Building multiple linear regression model')
 
