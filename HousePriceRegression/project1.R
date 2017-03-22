@@ -8,7 +8,7 @@ library(xgboost)
 library(randomForest)
 library(car)
 library(reshape2)
-
+set.seed(13579)
 HP.train <- read.csv('train.csv', sep = ',', header = TRUE)
 HP.test <- read.csv('test.csv', sep = ',', header = TRUE)
 HP.train$Id <- NULL
@@ -111,12 +111,16 @@ do_variable_selection <- function(dataSet)
   trainData <- cbind(trainData, logSalePrice)
   trainData$SalePrice <- NULL
   trainData.cv.lasso = cv.glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
-                             y=as.matrix(trainData[,ncol(trainData)]), alpha = 1)
-  names(trainData.cv.lasso$lambda.1se)="Lambda 1 SE:"
-  trainData.cv.lasso$lambda.1se
-  trainData.lasso = glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
-                           y=as.matrix(trainData[,ncol(trainData)]), alpha = 1)
-  co <- coef(trainData.lasso, s = trainData.cv.lasso$lambda.1se)
+                             y=as.matrix(trainData[,ncol(trainData)]), alpha = 0.3)
+  
+  # co <- coef(trainData.cv.lasso, s = "lambda.1se")
+  co <- coef(trainData.cv.lasso, s = "lambda.min")
+  
+  # names(trainData.cv.lasso$lambda.1se)="Lambda 1 SE:"
+  # trainData.cv.lasso$lambda.1se
+  # trainData.lasso = glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
+  #                          y=as.matrix(trainData[,ncol(trainData)]), alpha = 1)
+  # co <- coef(trainData.lasso, s = trainData.cv.lasso$lambda.1se)
   co <- co[2:nrow(co),] #remove the coefficient of intercept, which is the first row
   trainData <- trainData[, co > 0]
   vars <- names(trainData)
@@ -165,11 +169,13 @@ build_model <- function(train, type = 2, transformed = FALSE)
                            label=data.matrix(train[,ncol(train)]))
     
     res <- xgb.cv(params = param, data = dataAll,  nrounds = 1000, nfold = 10, 
-                  prediction = TRUE, eval_metric="rmse", verbose = TRUE)
+                  prediction = TRUE, eval_metric="rmse", verbose = FALSE)
     max_round = which.min(res$dt[, test.rmse.mean])
     rmse <- res$dt[, test.rmse.mean][max_round]
     
-    fit <- xgboost(params = param, data=dataAll, nrounds = max_round)
+    fit <- xgboost(params = param, data=dataAll, nrounds = max_round, verbose=FALSE)
+    
+    
   }
   if (type != 4) {
     fit$actual <- train$SalePrice
@@ -382,9 +388,6 @@ HP.all$MoSold <- NULL
 #************************************************************************************************************************************#
 
 #do transformation on variables?
-
-
-
 HP.all <- do_variable_selection(HP.all)
 do_transformation <- TRUE
 if (do_transformation) {
@@ -393,6 +396,8 @@ if (do_transformation) {
 HP.train = HP.all[1:ntrain,]
 HP.test = HP.all[(ntrain+1) : nrow(HP.all),]
 HP.test$SalePrice <- NULL
+
+
 
 for (i in 1:ncol(HP.train)) {
   if (sum(is.nan(HP.train[,i])) > 0 || sum(is.infinite(HP.train[,i])) > 0 ) {
@@ -412,7 +417,7 @@ HP.train.lr_model <- build_model(HP.train, type = 1, transformed = do_transforma
 print ('Building glmnet model')
 HP.train.glmnet_model <- build_model(HP.train, type = 2, transformed = do_transformation)
 print ('Building random forest model')
-# HP.train.rf_model <- build_model(HP.train, type = 3, transformed = do_transformation)
+HP.train.rf_model <- build_model(HP.train, type = 3, transformed = do_transformation)
 print ('Building xgboost model')
 HP.train.xgb_model <- build_model(HP.train, type = 4, transformed = do_transformation)
 
