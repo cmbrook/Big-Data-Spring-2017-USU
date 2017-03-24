@@ -22,6 +22,7 @@ library(car)
 library(reshape2)
 ```
 
+First we read in the data to R. 
 ```{r}
 HP.train <- read.csv('train.csv', sep = ',', header = TRUE)
 HP.test <- read.csv('test.csv', sep = ',', header = TRUE)
@@ -32,6 +33,11 @@ HP.test$SalePrice <- replicate(nrow(HP.test), 0)
 ntrain <- nrow(HP.train)
 ntest <- nrow(HP.test)
 HP.all <- rbind(HP.train, HP.test)
+```
+
+Then we created functions to check for and deal with missing values.
+We chose to encode categorical missing values as a separate "missing" category and to code missing continuous values as the mean of the variable. We determined that mean imputation prior to doing the variable selection technique was preferable because we were not certain that the variables we coded provided much predictive information. If they turned out to be important after performing variable selection, we decided that we would deal with the missing values more appropriately. 
+```{r}
 check_missing_values <- function(dataSet)
 {
   for (i in seq(1,ncol(dataSet))) {
@@ -85,6 +91,10 @@ deal_missing_values <- function(dataSet, ntrain = 1460, type = 1)
 #
 # encoding categorical variables. If a variable has 3 levels --> we need 2 bit to encode
 #
+```
+
+The following function was used to expand the categorical variables into dummy variables for the regression. 
+```{r}
 encode_categorical_variables <- function(dataSet, ntrain=1460)
 {
   dataSetTemp <- dataSet
@@ -104,7 +114,10 @@ encode_categorical_variables <- function(dataSet, ntrain=1460)
   dataSetTemp <- dataSetTemp[, -removed]
   return(dataSetTemp)
 }
+```
 
+This function was one approach we used to identify outliers. It deletes any observation with an observation on any variable more than 1.5*IQR beyond the 25th and 75th percentile. We determined it wasn't useful for us because it deleted the entire dataset.
+```{r}
 deal_outliers <- function(dataSet)
 {
   for (i in 1:ncol(dataSet)) {
@@ -116,7 +129,10 @@ deal_outliers <- function(dataSet)
   }
   return(dataSet)
 }
+```
 
+This function uses the elastic net technique to determine the most important variables for predicting the sale price. 
+```{r}
 do_variable_selection <- function(dataSet)
 {
   trainData <- dataSet[1:ntrain,]
@@ -139,7 +155,10 @@ do_variable_selection <- function(dataSet)
   dataSet <- subset(dataSet, select = vars)
   return(dataSet)
 }
+```
 
+
+```{r,echo=FALSE}
 build_model <- function(train, type = 2, transformed = FALSE)
 {
   
@@ -251,22 +270,16 @@ draw_boxplot <- function(data)
 <!-- # check the residuals -->
 <!-- # Mine: regression part + transformation  -->
 
-####################### 1. Dealing with missing values for training and testing data #################################################
+## 1. Dealing with missing values for training and testing data ##
 
+First we checked to see which variables contained missing values. 
 ```{r}
 check_missing_values(HP.all)
 HP.all <- deal_missing_values(HP.all, ntrain)
 print ('check missing values of the dataframe after replacing missing values. Should print blank')
 check_missing_values(HP.all)
 ```
-#outliers
-# draw_boxplot(HP.all)
-# print(paste0('Before removing outliers, number of observations: ', nrow(HP.train)))
-# HP.train <- HP.all[1:ntrain,]
-# HP.train <- deal_outliers(HP.train)
-# print(paste0('After removing outliers, number of observations: ', nrow(HP.train)))
-# ntrain <- nrow(HP.train)
-# HP.all <- rbind(HP.train, HP.test)
+
 
 #***************************************************************************************************************
 ###############2. Linear regression model with untransformed sale price data and residual analysis ######################

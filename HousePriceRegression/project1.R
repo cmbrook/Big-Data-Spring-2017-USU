@@ -414,9 +414,13 @@ for (i in 1:ncol(HP.test)) {
   }
 }
 
+
+
 #*******************************************************************************
 ###Multiple linear regression model with lassoed variables
 #Make a new dataset with log of sale price
+HP.train<-HP.all[1:ntrain,]
+
 HP.trainlog_sub<-HP.train %>% mutate(logSalePrice=log(SalePrice)) %>% select(-SalePrice)
 
 #Run a linear model on the log of sale price
@@ -447,7 +451,13 @@ HP.train[c(524,633,1299),]
 
 #Let's see what happens when we remove the three outliers that are clearly out of
 #whack with our other points
-no_outliers<-c(1:523,525:632,634:1298,1300:1460)
+no_outliers<-c(1:523,525:1298,1300:1460)
+
+# Remove outliers based on IQR criterion
+
+HP.train_no_outlier<-deal_outliers(HP.trainlog_sub)
+
+
 
 HP_subset_linmod_noout<-lm(logSalePrice ~ ., 
                            data=HP.trainlog_sub,
@@ -481,9 +491,12 @@ print ('Building xgboost model')
 HP.train.xgb_model <- build_model(HP.train, type = 4, transformed = do_transformation)
 
 print('Choosing?')
-HP.test$SalePrice <- predict(HP.train.xgb_model, as.matrix(HP.test))
+HP.test$SalePrice <- predict(HP_subset_linmod_noout, HP.test)
+
+
 
 if (do_transformation) HP.test$SalePrice <- reverse_transformed_response(HP.test$SalePrice)
+
 #write to file
 submission <- data.frame(Id <- HP.test.Id, SalePrice <- HP.test$SalePrice)
 names(submission) <- c('Id', 'SalePrice')
