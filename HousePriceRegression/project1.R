@@ -18,6 +18,12 @@ HP.test$SalePrice <- replicate(nrow(HP.test), 0)
 ntrain <- nrow(HP.train)
 ntest <- nrow(HP.test)
 HP.all <- rbind(HP.train, HP.test)
+
+###
+# input: the dataset to check whether missing values existed
+# output: print out all the columns with missing values. 
+# the printed info includes: the column name, the number of missing values, is numeric category? (TRUE of FALSE)
+###
 check_missing_values <- function(dataSet)
 {
   for (i in seq(1,ncol(dataSet))) {
@@ -28,6 +34,11 @@ check_missing_values <- function(dataSet)
     }
   }
 }
+###
+# input: the dataset to check whether categorical variables existed
+# output: print out all the columns which are categorical variables.
+# the printed info includes: the categorical column name, the number of factors
+###
 check_categorical_variables <- function(dataSet)
 {
   print('************************************************')
@@ -44,7 +55,13 @@ check_categorical_variables <- function(dataSet)
   print (paste0('Total categorical variables:' , count))
   print('************************************************')
 }
-
+##
+# input: the dataset.
+# this function deals with missing values.
+# Specifically, we replace missing values of numeric variables by the column's mean
+# for categorical variables, we created a new distinguished value, called "Missing".
+# output: return the dataset in which we replaced all missing values.
+##
 deal_missing_values <- function(dataSet, ntrain = 1460, type = 1)
 {
   # type is the replace method for numeric values. 
@@ -69,9 +86,11 @@ deal_missing_values <- function(dataSet, ntrain = 1460, type = 1)
   return(dataSet)
 }
 
-#
+##
+# input: the dataset
 # encoding categorical variables. If a variable has 3 levels --> we need 2 bit to encode
-#
+# output: return the dataset in which we encoded all the categorical variables
+##
 encode_categorical_variables <- function(dataSet, ntrain=1460)
 {
   dataSetTemp <- dataSet
@@ -92,6 +111,9 @@ encode_categorical_variables <- function(dataSet, ntrain=1460)
   return(dataSetTemp)
 }
 
+##
+# We are not using this function
+##
 deal_outliers <- function(dataSet)
 {
   for (i in 1:ncol(dataSet)) {
@@ -104,6 +126,15 @@ deal_outliers <- function(dataSet)
   return(dataSet)
 }
 
+##
+# input: the dataSet (HP.all) 
+# this function will select the important variables in the training set
+# we used the HP.all because after getting important variables in the training set,
+# we can remove unimportant variables in the test set also.
+# We used elastic net to select the important variables, we set alpha = 0.3 as it maximized 
+# the prediction of the training set.
+# output: the dataset in which we kept only important features.
+##
 do_variable_selection <- function(dataSet)
 {
   trainData <- dataSet[1:ntrain,]
@@ -115,12 +146,6 @@ do_variable_selection <- function(dataSet)
   
   # co <- coef(trainData.cv.lasso, s = "lambda.1se")
   co <- coef(trainData.cv.lasso, s = "lambda.min")
-  
-  # names(trainData.cv.lasso$lambda.1se)="Lambda 1 SE:"
-  # trainData.cv.lasso$lambda.1se
-  # trainData.lasso = glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
-  #                          y=as.matrix(trainData[,ncol(trainData)]), alpha = 1)
-  # co <- coef(trainData.lasso, s = trainData.cv.lasso$lambda.1se)
   co <- co[2:nrow(co),] #remove the coefficient of intercept, which is the first row
   trainData <- trainData[, co > 0]
   vars <- names(trainData)
@@ -129,6 +154,37 @@ do_variable_selection <- function(dataSet)
   vars <- c(vars, 'SalePrice')
   dataSet <- subset(dataSet, select = vars)
   return(dataSet)
+}
+
+##
+# input: dataSet and a boolean variable: do_transform_all (default = FALSE)
+# if do_transform_all is set to TRUE, we will do log transform for all the predictors + response
+# otherwise, we do log transformation on the response only.
+# output: the dataset in which we performed log transformation
+##
+do_transform <- function(dataSet, do_transform_all = FALSE)
+{
+  if (do_transform_all) {
+    for (i in 1:(ncol(dataSet) - 1) ) {
+      if (min(dataSet[,i]) == 0 && max(dataSet[,i]) == 1 ) {
+        #categorical values --> do nothing
+      } else{
+        dataSet[,i] <- log(dataSet[,i] + 1)
+      }
+    }
+  }
+  dataSet[,ncol(dataSet)] <- log(dataSet[,ncol(dataSet)] + 1)
+  return(dataSet)
+}
+##
+# input: the response
+# Since we do log tranformation on the reponse,
+# for the test set, we need to do reversed transformation for the response.
+# output: the reponse in which revesed transformation is performed
+##
+reverse_transformed_response <- function(response)
+{
+  return(exp(response) - 1)
 }
 
 build_model <- function(train, type = 2, transformed = FALSE)
@@ -191,22 +247,8 @@ build_model <- function(train, type = 2, transformed = FALSE)
   }
   return(fit)
 }
-do_transform <- function(dataSet)
-{
-  for (i in 1:(ncol(dataSet) - 1) ) {
-    if (min(dataSet[,i]) == 0 && max(dataSet[,i]) == 1 ) {
-      #categorical values --> do nothing
-    } else{
-      dataSet[,i] <- log(dataSet[,i] + 1)
-    }
-  }
-  dataSet[,ncol(dataSet)] <- log(dataSet[,ncol(dataSet)] + 1)
-  return(dataSet)
-}
-reverse_transformed_response <- function(response)
-{
-  return(exp(response) - 1)
-}
+
+
 evaluate_model <- function(model, test)
 {
   eval.predicted <- predict(model, data=test)
@@ -215,13 +257,18 @@ evaluate_model <- function(model, test)
   
 }
 
-draw_boxplot <- function(data)
+##
+# input : the dataset, and the group_size
+# group_size is set default to 2. it means that we draw 2 box plots in a single plot.
+# Draw the box plots of all the predictors and the response. 
+##
+draw_boxplot <- function(data, group_size = 2)
 {
   vars <- c()
   for(i in 1:ncol(data)) {
     if (is.numeric(data[,i])) vars <- c(vars, names(data)[i])
   }
-  group_size = 2
+  
   steps = seq(1,length(vars), group_size)
   if (steps[length(steps)] < length(vars)) steps <- c(steps, length(vars) + 1)
   dev.off()
