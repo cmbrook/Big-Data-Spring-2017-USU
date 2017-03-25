@@ -543,6 +543,8 @@ write.csv(file = 'submission.csv', x = submission, row.names = FALSE)
 
 ```
 
+Our prediction RMSLE was 
+#0.13025
 
 
 
