@@ -158,7 +158,7 @@ do_variable_selection <- function(dataSet)
 ```
 
 
-```{r,echo=FALSE}
+```{r,include=FALSE}
 build_model <- function(train, type = 2, transformed = FALSE)
 {
   
@@ -280,10 +280,8 @@ print ('check missing values of the dataframe after replacing missing values. Sh
 check_missing_values(HP.all)
 ```
 
+#2. Linear regression model with untransformed sale price data and residual analysis #
 
-#***************************************************************************************************************
-###############2. Linear regression model with untransformed sale price data and residual analysis ######################
-#***************************************************************************************************************
 ```{r}
 HP.train<-deal_missing_values(HP.train)
 
@@ -291,124 +289,117 @@ HP.train<-deal_missing_values(HP.train)
 HP.train.lr_model <- lm(SalePrice~., HP.train)
 ```
 
-### Residual Plots
+# *Residual Plots*
 
 #Residual vs Fitted Plot
 ```{r}
 plot(HP.train.lr_model, which=1)
 ```
 
-#There's a pretty clear expansion in variance once the 
-# sale price goes above 3e+05. Makes sense, since there 
-#are fewer homes at that price range.
-#The base r plots point out some outliers too, obs. # 826, 1325, 524
+There's a pretty clear expansion in variance once the 
+ sale price goes above 3e+05. This Makes sense, since there 
+are fewer homes at that price range.
+The base r plots point out that the 3 biggest outliers are obs. # 826, 1325, 524
+
 ```{r}
-summary(HP.train.lr_model)
 ```
 #QQ plot
 ```{r}
 plot(HP.train.lr_model, which=2)
 ```
-#QQ plot looks pretty bad at the tails. 
-#826 and 524 are again noted as outliers
+
+
+The QQ plot looks pretty bad at the tails. 
+Obs. 826 and 524 are again noted as outliers
 
 #fitted values by square root of standardized residuals
 ```{r}
 plot(HP.train.lr_model, which=3)
 ```
-#error clearly increases at higher ends of sale price
+
+
+From examining this plot, the error clearly increases at higher ends of sale price
 
 #cook's distance
 ```{r}
 plot(HP.train.lr_model, which=4)
 ```
 
-#3 outliers in terms of cook's distance: 524, 1171, and 1424
+3 outliers in terms of cook's distance: 524, 1171, and 1424
 
 #Leverage vs. standardized residuals
 ```{r}
 plot(HP.train.lr_model, which=5)
 ```
-#observations with high leverage and high standardized residuals 
-# are the same that have high cook's d
 
-#We have five clear outliers that need looking at. Log transform should help.
-#These are: 524,826,1171,1325, 1424
-```{r}
-build_model(HP.train, type = 1)
-```
 
-#Since I have the linear model code up and running here and Thanh already made all this 
-#lovely code for us, I'll just run it with the log-transform on sale price. 
+observations with high leverage and high standardized residuals 
+ are the same that have high cook's d
 
-#***************************************************************************************************************
-###############3. Linear regression model with log transform of sale price data and residual analysis ######################
-#***************************************************************************************************************
+We have five clear outliers that need looking at. Log transform should help.
+These are: 524,826,1171,1325, 1424
+
+
+
+Based on the residual plots, we determined that a log transform of the saleprice variable was appropriate. 
+
+#3. Linear regression model with log transform of sale price data and residual analysis 
 ```{r}
 HP.trainlog<-HP.train %>% mutate(logSalePrice=log(SalePrice)) %>% select (-SalePrice)
 
 HP.train_logtrans_mod<-lm(logSalePrice ~., HP.trainlog)
 ```
 
-#Same Plots again
+We looked at the same Plots again
 
-#outliers from untransformed were 524,826,1171,1325, 1424
+The outliers from the untransformed model were 524,826,1171,1325, 1424
 
-#residuals vs fitted
+#Residuals vs fitted plot
 ```{r}
 plot(HP.train_logtrans_mod, which=1, id.n=5)
 ```
-# Residuals over .5 also now include observations 633 and 463
 
+ Residuals over .5 also now include observations 633 and 463
 
-#An alternate method for seeing the labels for all residuals, since r only prints
-#a given number of extreme values
-# logtransmod<-data.frame(HP.train_logtrans_mod$residuals,
-#                         HP.train_logtrans_mod$fitted.values,
-#                         HP.trainlog$logSalePrice)
-# colnames(logtransmod)<-c("residuals","predicted","logSalePrice")
-# logtransmod$obs<-as.character(1:1460)
-# 
-# logtransmod %>% 
-# ggplot(aes(x=predicted,y=residuals, label=obs))+geom_text()
 
 ```{r}
 plot(HP.train_logtrans_mod, which=2, id.n=6)
 ```
 
-#observation 89 shows up as overestimating the price based on the trend line
-#of the quantiles. The QQ plot for this model does not look much better than previous
+Observation 89 shows up as overestimating the price based on the trend line of the quantiles. The QQ plot for this model does not look much better than previous
 ```{r}
 plot(HP.train_logtrans_mod, which=3)
 ```
-#The scale-location plot looks far better for this model, although error is slightly 
-#higher at the lower end now. The same outliers are identified
+The scale-location plot looks far better for this model, although error is slightly higher at the lower end now. The same outliers are identified
 ```{r}
 plot(HP.train_logtrans_mod, which=4)
 ```
 
-#89 is now identified as an influential observation by cook's distance
+Obs. 89 is now identified as an influential observation by cook's distance.
 
 ```{r}
 plot(HP.train_logtrans_mod, which=5)
 ```
 
-#Only a few observations with high leverage and high standardized residuals, which
-#we already knew about.
+Only a few observations with high leverage and high standardized residuals, which we already knew about.
 ```{r}
-summary(HP.train_logtrans_mod)
+cat("Log trans r squared is", summary(HP.train_logtrans_mod)$adj.r.squared)
+cat("\n untransformed r squared is", summary(HP.train.lr_model)$adj.r.squared)
 
-summary(HP.train.lr_model)
+cat(" \n Log trans F is", summary(HP.train_logtrans_mod)$fstatistic[[1]])
+cat("\n untransformed F is", summary(HP.train.lr_model)$fstatistic[[1]])
+
+
 ```
 
 
-#Comparing with the untransformed model, we get a higher adjusted R-squared and a higher
-#F statistic when predicting the log transform of sale price. 
+Comparing with the untransformed model, we get a higher adjusted R-squared and a higher F statistic when predicting the log transform of sale price. 
 
-#************************************************************************************************************************************#
-####################### 2. Encoding categorical variables ############################################################################
+# 2. Encoding categorical variables 
+
+Before conducting the lasso variable selection method , we constructed dummy variables for the categorical variables and transformed some quantitative variables to make them more interpretable. 
 ```{r}
-check_categorical_variables(HP.train)
+#check_categorical_variables(HP.train)
 
 # HP.train <- encode_categorical_variables(HP.train)
 HP.all <- encode_categorical_variables(HP.all)
@@ -434,21 +425,24 @@ HP.all$YearRemodAdd <- NULL
 HP.all$YrSold <- NULL
 HP.all$MoSold <- NULL
 ```
-#************************************************************************************************************************************#
 
-#do transformation on variables?
-```{r}
+```{r, include=FALSE}
 do_transformation <- TRUE
 if (do_transformation) {
   HP.all <- do_transform(HP.all)
 }
 
+```
 
+Here we perform the variable selection method. The variable selection function also creates a subset of the chosen variables to use in the model. 
+```{r}
 HP.all <- do_variable_selection(HP.all)
 HP.train = HP.all[1:ntrain,]
 HP.test = HP.all[(ntrain+1) : nrow(HP.all),]
 HP.test$SalePrice <- NULL
+```
 
+```{r,include=FALSE}
 for (i in 1:ncol(HP.train)) {
   if (sum(is.nan(HP.train[,i])) > 0 || sum(is.infinite(HP.train[,i])) > 0 ) {
     print (i)
@@ -460,22 +454,89 @@ for (i in 1:ncol(HP.test)) {
   }
 }
 
+
+
 print ('Building multiple linear regression model')
+```
 
-HP.train.lr_model <- build_model(HP.train, type = 1, transformed = do_transformation)
 
-print ('Building glmnet model')
-HP.train.glmnet_model <- build_model(HP.train, type = 2, transformed = do_transformation)
-print ('Building random forest model')
-HP.train.rf_model <- build_model(HP.train, type = 3, transformed = do_transformation)
-print ('Building xgboost model')
-# HP.train.xgb_model <- build_model(HP.train, type = 4, transformed = do_transformation)
+We then performed a linear regression with the lassoed variables on the log of the sale price. and looked at the residual plots. 
 
-print('Choosing?')
-HP.test$SalePrice <- predict(HP.train.rf_model, as.matrix(HP.test))
+```{r}
 
-if (do_transformation) HP.test$SalePrice <- reverse_transformed_response(HP.test$SalePrice)
+
+#*******************************************************************************
+###Multiple linear regression model with lassoed variables
+#Make a new dataset with log of sale price
+HP.train<-HP.all[1:ntrain,]
+
+HP.trainlog_sub<-HP.train %>% mutate(logSalePrice=log(SalePrice)) %>% select(-SalePrice)
+
+#Run a linear model on the log of sale price
+HP_subset_linmod<-lm(logSalePrice ~ ., data=HP.trainlog_sub)
+
+#View summary of model, R-Squared is still good
+summary(HP_subset_linmod)
+```
+
+#Examining outliers from lassoed variable regression 
+```{r}
+plot(HP_subset_linmod,which=1)
+
+```
+ 
+ A few houses are severely overestimated. Why is this?
+Check out cases 633, 524, and 1299, increasing in order of severity
+```{r}
+plot(HP_subset_linmod, which=2)
+```
+
+The same three outliers show up in qq plot, unsurprisingly
+
+```{r}
+plot(HP_subset_linmod, which=4)
+```
+
+Note that from this plot, 31 may also be an outlier, but if it is overestimated, we may not need to worry about it
+
+```{r}
+plot(HP_subset_linmod, which=5)
+```
+
+It's clear from these plots a few highly influential points are driving our regression
+
+Look at these three points in detail
+
+```{r}
+HP.train[c(524,633,1299),]
+```
+
+
+Let's see what happens when we remove the three outliers that are clearly out of whack with our other points
+
+```{r}
+no_outliers<-c(1:523,525:1298,1300:1460)
+
+HP_subset_linmod_noout<-lm(logSalePrice ~ ., 
+                           data=HP.trainlog_sub,
+                           subset=no_outliers)
+
+summary(HP_subset_linmod_noout)
+
+plot(HP_subset_linmod_noout,which=1)
+```
+
+When we remove those 3 points, the residuals look a lot
+ better, our adjusted R-squared goes up, and our
+ betas change a good deal, which means we may avoid fitting some noise by removing the poorly predicted points. 
+
+
+We decided to use the model on the subset of the sample without those 3 outliers.
+
+```{r}
+
 #write to file
+HP.test$SalePrice <- predict(HP_subset_linmod_noout, HP.test)
 submission <- data.frame(Id <- HP.test.Id, SalePrice <- HP.test$SalePrice)
 names(submission) <- c('Id', 'SalePrice')
 write.csv(file = 'submission.csv', x = submission, row.names = FALSE)
