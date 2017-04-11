@@ -1,0 +1,44 @@
+---
+title: "Housing Prices Pt 2"
+author: "Carla M Brookey, Fred Hintz, Kassidie Stokes, Thanh Tran"
+date: "April 11, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, cache = TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r load, cache = TRUE}
+#Load data
+
+#Load Packages
+
+```
+
+```{r rpart, cache = TRUE}
+
+```
+
+```{r randForests, cache = TRUE}
+
+```
+
+```{r gbm, cache = TRUE}
+
+```
+
+```{r gbmTune, cache = TRUE}
+
+```
+
+```{r svm, cache = TRUE}
+
+```
+
+```{r svmTune, cache = TRUE}
+
+```
+
