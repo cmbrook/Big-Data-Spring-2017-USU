@@ -7,20 +7,90 @@ output: pdf_document
 
 ```{r setup, include=FALSE, cache = TRUE}
 knitr::opts_chunk$set(echo = TRUE)
+set.seed(56)
 ```
 
 ## R Markdown
 
-```{r load, cache = TRUE}
+```{r load, cache = TRUE, warning = FALSE}
 #Load data
+train <- read.csv('train.csv', sep = ',', header = TRUE)
+test <- read.csv('test.csv', sep = ',', header = TRUE)
 
 #Load Packages
+library(rpart)
+library(randomForest)
+library(gbm)
+library(caret)
+library(e1071)
+library(dplyr)
 
 ```
 
 ```{r rpart, cache = TRUE}
+#Create a validation set
+#' Splits data.frame into arbitrary number of groups
+#' 
+#' @param dat The data.frame to split into groups
+#' @param props Numeric vector. What proportion of the data should
+#'              go in each group?
+#' @param which.adjust Numeric. Which group size should we 'fudge' to
+#'              make sure that we sample enough (or not too much)
+split_data <- function(dat, props = c(.8, .15, .05), which.adjust = 1){
+
+    # Make sure proportions are positive
+    # and the adjustment group isn't larger than the number
+    # of groups specified
+    stopifnot(all(props >= 0), which.adjust <= length(props))
+
+    # could check to see if the sum is 1
+    # but this is easier
+    props <- props/sum(props)
+    n <- nrow(dat)
+    # How large should each group be?
+    ns <- round(n * props)
+    # The previous step might give something that
+    # gives sum(ns) > n so let's force the group
+    # specified in which.adjust to be a value that
+    # makes it so that sum(ns) = n
+    ns[which.adjust] <- n - sum(ns[-which.adjust])
+
+    ids <- rep(1:length(props), ns)
+    # Shuffle ids so that the groups are randomized
+    which.group <- sample(ids)
+    split(dat, which.group)
+}
+
+split = split_data(train, c(0.8, 0.2))
+train1 = split$'1'
+val1 = split$'2'
+
+full.tree = rpart(SalePrice ~ . -Id,
+                  data = train1,
+                  method = "anova",
+                  control = rpart.control(cp = 0.0, minsplit = 2))
+plotcp(full.tree)
+
+fit.tree = rpart(SalePrice ~ . -Id,
+                 data = train1,
+                 method = "anova",
+                 control = rpart.control(cp = 0.0055, minsplit = 2))
+
+sqrt(mean((val1$SalePrice - predict(fit.tree, val1, type = "vector"))^2))
+
+#Try again with the full dataset and the resubstitution error
+fit.tree1 = rpart(SalePrice ~ . -Id,
+                  data = train,
+                  method = "anova",
+                  control = rpart.control(cp = 0.0055, minsplit = 2))
+
+sqrt(mean((train$SalePrice - predict(fit.tree1, train, type = "vector"))^2))
 
 ```
+Minimum xerror at cp
+46  1.299978e-03     47 8.908836e-02 0.2499940 0.02580239
+Using the 1 SE rule, we get
+18  5.573976e-03     17 1.643091e-01 0.2697831 0.02541736
 
 ```{r randForests, cache = TRUE}
 
