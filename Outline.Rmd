@@ -12,6 +12,8 @@ set.seed(56)
 
 ## R Markdown
 
+Run with log(SalePrice).
+
 ```{r load, cache = TRUE, warning = FALSE}
 #Load data
 train <- read.csv('train.csv', sep = ',', header = TRUE)
