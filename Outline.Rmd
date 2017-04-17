@@ -31,6 +31,14 @@ library(sparklyr)
 ```
 
 ```{r rpart, cache = TRUE}
+
+#Carla's doing random forest + gbm and uploading the 10-fold cv code
+
+#than's doing xgboost 
+#kassidie's doing svm
+#Fred doing neural nets 
+
+
 #Create a validation set
 #' Splits data.frame into arbitrary number of groups
 #' 
@@ -144,4 +152,9 @@ varImpPlot(randF)
 ```{r svmTune, cache = TRUE}
 
 ```
+
+```{r}
+
+```
+
 
