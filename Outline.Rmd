@@ -26,6 +26,7 @@ library(gbm)
 library(caret)
 library(e1071)
 library(dplyr)
+library(sparklyr)
 
 ```
 
@@ -95,6 +96,36 @@ Using the 1 SE rule, we get
 18  5.573976e-03     17 1.643091e-01 0.2697831 0.02541736
 
 ```{r randForests, cache = TRUE}
+#Must first deal with NA values
+deal_missing_values <- function(dataSet, ntrain = 1460, type = 1)
+{
+  # type is the replace method for numeric values. 
+  #if type = 1 --> using mean to replace.
+  #if type = 2 --> using median to replace.
+  dataSet[] <- lapply(dataSet, function(x){
+    # check if variables have a factor:
+    if(!is.factor(x)) {
+      #replace NA by mean
+      if (type == 1) x[is.na(x)] <- mean(x[1:1460], na.rm = TRUE) 
+      else if (type == 2) if (type == 1) x[is.na(x)] <- median(x[1:1460], na.rm = TRUE) 
+    }
+    else {
+      # otherwise include NAs into factor levels and change factor levels:
+      x <- factor(x, exclude=NULL)
+      levels(x)[is.na(levels(x))] <- "Missing"
+    }
+    return(x)
+  })
+  
+  return(dataSet)
+}
+
+train2 = deal_missing_values(train)
+
+randF = randomForest(log(SalePrice) ~ . -Id,
+                     data = train2,
+                     importance = TRUE)
+varImpPlot(randF)
 
 ```
 
