@@ -153,7 +153,24 @@ varImpPlot(randF)
 
 ```
 
-```{r}
+```{r neural net}
+
+vrs<-names(HP.train)
+
+vrs[!vrs %in% "SalePrice"]
+nn_form<-as.formula(paste("SalePrice ~", paste(vrs[!vrs %in% "SalePrice"],collapse= " + ")))
+
+hpmeans<-apply(HP.train,2,mean)
+
+
+HP.train_ctr<-as.data.frame(scale(HP.train,center=hpmeans))
+
+hnn<-neuralnet(nn_form,data=HP.train_ctr,hidden=c(1),linear.output=T)
+
+
+plot(hnn)
+
+
 
 ```
 
