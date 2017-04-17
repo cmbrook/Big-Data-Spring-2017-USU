@@ -10,6 +10,47 @@ knitr::opts_chunk$set(echo = TRUE)
 set.seed(56)
 ```
 
+```{r 10foldFunction}
+tenFoldCrossVal = function(formula, n = 10, data, type, ...){
+  #n is the number of desired folds
+  #data is the desired dataset
+  #type is the type of analysis
+  #formula is the formula for analysis
+  
+  folds = rep(c(1:n), length = nrow(data))
+  folds = sample(folds)
+  
+  resultVector = rep(0, length(nrow(data)))
+  
+  for (i in 1:n){
+    train = data[folds!=i,]
+    test = data[folds==i,]
+    fit = switch(type,
+                 rpart = rpart(formula, data = train, ...),
+                 randomForest = randomForest(formula, data = train, ...),
+                 lda = lda(formula, data = train, ...),
+                 qda = qda(formula, data = train, ...),
+                 knn3 = knn3(formula, data = train, ...),
+                 glm = glm(formula, data = train, ...),
+                 ada = ada(formula, data = train, ...),
+                 svm = svm(formula, data = train, ...),
+                 gbm = gbm(formula, data = train, ...))
+    
+    resultVector[folds == i] = switch(type,
+                                      rpart = predict(fit, newdata = test, ...),
+                                      randomForest = predict(fit, newdata = test, ...),
+                                      lda = predict(fit, data = test, ...)$class,
+                                      qda = predict(fit, data = test, ...)$class,
+                                      knn3 = predict(fit, data = test, ...),
+                                      glm = predict(fit, data = test, ...),
+                                      ada = predict(fit, data = test, ...),
+                                      svm = predict(fit, data = test, ...),
+                                      gbm = predict(fit, data = test, ...))
+  }
+  return(resultVector)
+}
+```
+
 ## R Markdown
 
 Run with log(SalePrice).
