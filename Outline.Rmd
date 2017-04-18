@@ -49,6 +49,11 @@ tenFoldCrossVal = function(formula, n = 10, data, type, ...){
   }
   return(resultVector)
 }
+
+reverse_transformed_response <- function(response)
+{
+  return(exp(response) - 1)
+}
 ```
 
 ## R Markdown
@@ -177,6 +182,20 @@ randF = randomForest(log(SalePrice) ~ . -Id,
                      data = train2,
                      importance = TRUE)
 varImpPlot(randF)
+
+```
+
+Based on the variable importance plot, use OverallQual, Neighborhood, GrLivArea, ExterQual, TotalBsmtSF, GarageCars, GarageArea, x1stFlrSF, KitchenQual, and YearBuilt.
+
+```{r randFVarSelec, cache = TRUE}
+rf = tenFoldCrossVal(log(SalePrice) ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+                      TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+                      YearBuilt,
+                    n = 10,
+                    data = train,
+                    type = "randomForest")
+sol = reverse_transformed_response(rf)
+rmse(actual = train$SalePrice, predicted = sol)
 
 ```
 
