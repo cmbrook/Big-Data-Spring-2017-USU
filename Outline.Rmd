@@ -68,6 +68,8 @@ library(caret)
 library(e1071)
 library(dplyr)
 library(sparklyr)
+library(neuralnet)
+library(glmnet)
 
 ```
 
@@ -178,6 +180,52 @@ varImpPlot(randF)
 
 ```
 
+```{r, include=FALSE}
+encode_categorical_variables <- function(dataSet, ntrain=1460)
+{
+  dataSetTemp <- dataSet
+  for (i in 1:ncol(dataSet)){
+    if (is.factor(dataSet[,i])) {
+      col_name = names(dataSet)[i]
+      t <- model.matrix(~ factor(dataSet[,i]) - 1)
+      dataSetTemp <- cbind(t[,2:ncol(t)], dataSetTemp)
+      new_col_names <- paste0(col_name, "_bit", seq(1, ncol(t) - 1))
+      names(dataSetTemp)[1:ncol(t) - 1] <- new_col_names
+    }
+  }
+  removed <- c()
+  for (i in 1:ncol(dataSetTemp)) {
+    if (is.factor(dataSetTemp[,i])) removed <- c(removed, i)
+  }
+  dataSetTemp <- dataSetTemp[, -removed]
+  return(dataSetTemp)
+}
+
+do_variable_selection <- function(dataSet)
+{
+  trainData <- dataSet[1:ntrain,]
+  logSalePrice <- log(trainData$SalePrice)
+  trainData <- cbind(trainData, logSalePrice)
+  trainData$SalePrice <- NULL
+  trainData.cv.lasso = cv.glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
+                             y=as.matrix(trainData[,ncol(trainData)]), alpha = 1)
+  names(trainData.cv.lasso$lambda.1se)="Lambda 1 SE:"
+  trainData.cv.lasso$lambda.1se
+  trainData.lasso = glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
+                           y=as.matrix(trainData[,ncol(trainData)]), alpha = 1)
+  co <- coef(trainData.lasso, s = trainData.cv.lasso$lambda.1se)
+  co <- co[2:nrow(co),] #remove the coefficient of intercept, which is the first row
+  trainData <- trainData[, co > 0]
+  vars <- names(trainData)
+  print('Important variables:')
+  print(vars)
+  vars <- c(vars, 'SalePrice')
+  dataSet <- subset(dataSet, select = vars)
+  return(dataSet)
+}
+```
+
+
 ```{r gbm, cache = TRUE}
 
 ```
@@ -194,25 +242,92 @@ varImpPlot(randF)
 
 ```
 
+```{r}
+tenFoldCrossVal = function(formula, n = 10, data, type, nnn=1, ...){
+  #n is the number of desired folds
+  #data is the desired dataset
+  #type is the type of analysis
+  #formula is the formula for analysis
+  require(dplyr)
+  folds = rep(c(1:n), length = nrow(data))
+  folds = sample(folds)
+  
+  resultVector = rep(0, length(nrow(data)))
+  
+  for (i in 1:n){
+    train = data[folds!=i,]
+    test = data[folds==i,]
+    fit = switch(type,
+                 rpart = rpart(formula, data = train, ...),
+                 randomForest = randomForest(formula, data = train, ...),
+                 lda = lda(formula, data = train, ...),
+                 qda = qda(formula, data = train, ...),
+                 knn3 = knn3(formula, data = train, ...),
+                 glm = glm(formula, data = train, ...),
+                 ada = ada(formula, data = train, ...),
+                 svm = svm(formula, data = train, ...),
+                 gbm = gbm(formula, data = train, ...),
+                 neunet = neuralnet(formula,data=train,hidden=c(nnn)))
+        
+    resultVector[folds == i] = switch(type,
+                                      rpart = predict(fit, newdata = test, ...),
+                                      randomForest = predict(fit, newdata = test, ...),
+                                      lda = predict(fit, data = test, ...)$class,
+                                      qda = predict(fit, data = test, ...)$class,
+                                      knn3 = predict(fit, data = test, ...),
+                                      glm = predict(fit, data = test, ...),
+                                      ada = predict(fit, data = test, ...),
+                                      svm = predict(fit, data = test, ...),
+                                      gbm = predict(fit, data = test, ...),
+                                    neunet = compute(fit,covariate=select(test,-SalePrice))$net.result)
+  }
+  return(resultVector)
+}
+```
+
+
 ```{r neural net}
 
-vrs<-names(HP.train)
+
+train_dum<-encode_categorical_variables(train2)
+ntrain<-1460
+train_dum_reduced<-do_variable_selection(train_dum)
+
+vrs<-names(train_dum_reduced)
 
 vrs[!vrs %in% "SalePrice"]
 nn_form<-as.formula(paste("SalePrice ~", paste(vrs[!vrs %in% "SalePrice"],collapse= " + ")))
 
-hpmeans<-apply(HP.train,2,mean)
+hpmeans<-apply(train_dum_reduced,2,mean)
 
+train_dum_scaled<-as.data.frame(scale(train_dum_reduced, center=T,scale=T))
 
-HP.train_ctr<-as.data.frame(scale(HP.train,center=hpmeans))
+hnn1<-neuralnet(nn_form,data=train_dum_scaled,linear.output=T)
 
-hnn<-neuralnet(nn_form,data=HP.train_ctr,hidden=c(1),linear.output=T)
+nn_cv_1node<-tenFoldCrossVal(formula=nn_form,data=train_dum_scaled,type="neunet",nnn=1)
 
+nn_unscaled<-nn_cv_1node*sd(train_dum_reduced$SalePrice)+mean(train_dum_reduced$SalePrice)
 
-plot(hnn)
+RMSE<-sqrt(sum((train_dum_reduced$SalePrice - nn_unscaled)**2)/1460) 
 
+#RMSE is extremely bad
 
+test1<-deal_missing_values(test)
+test_dum<-encode_categorical_variables(test1)
+reduced_vars<-which(colnames(test_dum) %in% colnames(train_dum_reduced))
+
+test_dum_reduced<-test_dum[,reduced_vars]
+
+test_dum_scaled<-scale(test_dum_reduced)
+
+prediction_nn<-compute(hnn1,covariate=test_dum_scaled)$net.result
+
+prediction_nn<-prediction_nn*sd(train$SalePrice)+mean(train$SalePrice)
+submission_nn<-data.frame(test$Id,prediction_nn)
+colnames(submission_nn)<-c("ID","SalePrice")
+
+write.csv(submission_nn,"submission_nn.csv",row.names = FALSE)
 
 ```
 
-
+RMLSE for the 1 node, 1 layer neural net is .16521
