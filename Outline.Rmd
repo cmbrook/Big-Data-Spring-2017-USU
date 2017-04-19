@@ -63,7 +63,7 @@ test <- read.csv('test.csv', sep = ',', header = TRUE)
 #Load Packages
 library(rpart)
 library(randomForest)
-library(gbm)
+#library(gbm)
 library(caret)
 library(e1071)
 library(dplyr)
@@ -295,14 +295,22 @@ train_dum_reduced<-do_variable_selection(train_dum)
 
 vrs<-names(train_dum_reduced)
 
+train_dum_reduced_log<-do_transform(train_dum_reduced)
+
 vrs[!vrs %in% "SalePrice"]
 nn_form<-as.formula(paste("SalePrice ~", paste(vrs[!vrs %in% "SalePrice"],collapse= " + ")))
 
 hpmeans<-apply(train_dum_reduced,2,mean)
 
-train_dum_scaled<-as.data.frame(scale(train_dum_reduced, center=T,scale=T))
+train_dum_scaled<-as.data.frame(scale(train_dum_reduced_log, center=T,scale=T))
 
-hnn1<-neuralnet(nn_form,data=train_dum_scaled,linear.output=T)
+#doesn't converge with logistic activation function
+#hnn_20nodes<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(10,10),linear.output=T,rep=1,stepmax=3e+05,lifesign="full")
+
+hnn_20nodes_t<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(10,10),linear.output=T,rep=1,stepmax=3e+05,lifesign="full",act.fct = "tanh")
+
+#this one works after 11 minutes
+hnn_25nodes<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(15,10),linear.output=T,rep=1,stepmax=3e+05,lifesign="full")
 
 nn_cv_1node<-tenFoldCrossVal(formula=nn_form,data=train_dum_scaled,type="neunet",nnn=1)
 
@@ -325,6 +333,8 @@ prediction_nn<-compute(hnn1,covariate=test_dum_scaled)$net.result
 prediction_nn<-prediction_nn*sd(train$SalePrice)+mean(train$SalePrice)
 submission_nn<-data.frame(test$Id,prediction_nn)
 colnames(submission_nn)<-c("ID","SalePrice")
+
+
 
 write.csv(submission_nn,"submission_nn.csv",row.names = FALSE)
 
