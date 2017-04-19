@@ -459,6 +459,24 @@ rmse(actual = train4$SalePrice, predicted = sol.gbmD2)
 
 Clearly the tuned gbm on the dummy variables following variable selection did the best.
 
+Now for curiousity's sake, I will run the test data through all of my models for submission to Kaggle.
+
+```{r testData, cache = TRUE}
+test2 = deal_missing_values(dataSet = test, ntrain = 1459)
+test3 = encode_categorical_variables(test2, ntrain = 1459)
+
+test2$SalePrice <- predict(gbm3, test2, n.trees = 90)
+submission <- data.frame(Id <- test2$Id, SalePrice <- test2$SalePrice)
+names(submission) <- c('Id', 'SalePrice')
+write.csv(file = 'submissionGBM.csv', x = submission, row.names = FALSE)
+
+test3$SalePrice <- predict(gbmD2, test3, n.trees = 100)
+submission <- data.frame(Id <- test3$Id, SalePrice <- test3$SalePrice)
+names(submission) <- c('Id', 'SalePrice')
+write.csv(file = 'submissionGBMDummy.csv', x = submission, row.names = FALSE)
+
+```
+
 ```{r}
 tenFoldCrossVal = function(formula, n = 10, data, type, nnn=1, ...){
   #n is the number of desired folds
