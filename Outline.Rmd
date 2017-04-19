@@ -75,7 +75,7 @@ library(dplyr)
 library(sparklyr)
 library(neuralnet)
 library(glmnet)
-
+library(ModelMetrics)
 ```
 
 ```{r rpart, cache = TRUE}
@@ -197,7 +197,51 @@ rf = tenFoldCrossVal(log(SalePrice) ~ OverallQual + Neighborhood + GrLivArea +  
 sol = reverse_transformed_response(rf)
 rmse(actual = train$SalePrice, predicted = sol)
 
+rf2 = tenFoldCrossVal(SalePrice ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+                       TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+                       YearBuilt,
+                     n = 10,
+                     data = train,
+                     type = "randomForest")
+rmse(actual = train$SalePrice, predicted = rf2)
+
 ```
+
+Unfortunately, neither of these worked very well just on their own, with the selected variables.
+
+Now I'll try GBM on the selected variables.
+
+```{r gbm, cache = TRUE}
+gbm = tenFoldCrossVal(log(SalePrice) ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+                           TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+                           YearBuilt,
+                      n = 10,
+                      data = train,
+                      type = "gbm",
+                      n.trees = 100)
+
+gbm1 = gbm(log(SalePrice) ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+                           TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+                           YearBuilt,
+           distribution = "gaussian",
+           data = train,
+           n.trees = 100)
+sol.gbm1 = reverse_transformed_response(predict(gbm1, newdata = train, n.trees = 100))
+rmse(actual = train$SalePrice, predicted = sol.gbm1)
+
+gbm2 = gbm(SalePrice ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+                           TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+                           YearBuilt,
+           distribution = "gaussian",
+           data = train,
+           n.trees = 100)
+sol.gbm2 = predict(gbm2, newdata = train, n.trees = 100)
+rmse(actual = train$SalePrice, predicted = sol.gbm2)
+
+```
+
+In the case of the tree based methods, the log transformed response is not going as well as the untransformed data.
+Further analysis will be completed without transforming SalePrice.
 
 ```{r, include=FALSE}
 encode_categorical_variables <- function(dataSet, ntrain=1460)
@@ -242,11 +286,6 @@ do_variable_selection <- function(dataSet)
   dataSet <- subset(dataSet, select = vars)
   return(dataSet)
 }
-```
-
-
-```{r gbm, cache = TRUE}
-
 ```
 
 ```{r gbmTune, cache = TRUE}
