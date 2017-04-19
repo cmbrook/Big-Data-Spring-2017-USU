@@ -371,8 +371,93 @@ rmse(actual = train4$SalePrice, predicted = rfd1)
 ```
 
 ```{r gbmDummy, cache = TRUE}
+gbmD1 = gbm(SalePrice ~ .,
+            data = train4,
+            distribution = "gaussian",
+            n.trees = 100)
+
+sol.gbmD1 = predict(gbmD1, newdata = train3, n.trees = 100)
+rmse(actual = train$SalePrice, predicted = sol.gbmD1)
 
 ```
+
+Not terrible, but let's see what tuning does.
+
+```{r gbmDTune, cache = TRUE}
+#fitControl = trainControl(method = "cv", number = 10)
+#gbmGrid1 = expand.grid(n.trees = c(25, 50, 75, 100),
+#                       interaction.depth = c(10, 12, 14, 16),
+#                       shrinkage = c(0.01, 0.05, 0.1, 0.2),
+#                       n.minobsinnode = 10)
+
+#tuneD1 = train(SalePrice ~ .,
+#               method = "gbm",
+#               tuneGrid = gbmGrid1,
+#               trControl = fitControl,
+#               data = train4)
+#tuneD1
+
+#gbmGrid2 = expand.grid(n.trees = c(90, 95, 100, 105, 110),
+#                       interaction.depth = c(13, 14, 15),
+#                       shrinkage = c(0.04, 0.05, 0.06),
+#                       n.minobsinnode = 10)
+
+#tuneD2 = train(SalePrice ~ .,
+#               method = "gbm",
+#               tuneGrid = gbmGrid2,
+#               trControl = fitControl,
+#               data = train4)
+#tuneD2
+
+#gbmGrid3 = expand.grid(n.trees = c(95, 100, 105),
+#                       interaction.depth = c(1, 5, 10),
+#                       shrinkage = c(0.04, 0.05, 0.06),
+#                       n.minobsinnode = 10)
+
+#tuneD3 = train(SalePrice ~ .,
+#               method = "gbm",
+#               tuneGrid = gbmGrid3,
+#               trControl = fitControl,
+#               data = train4)
+#tuneD3
+
+#gbmGrid4 = expand.grid(n.trees = 100,
+#                       interaction.depth = 14,
+#                       shrinkage = c(0.045, 0.05, 0.055),
+#                       n.minobsinnode = c(1, 5, 10))
+
+#tuneD4 = train(SalePrice ~ .,
+#               method = "gbm",
+#               tuneGrid = gbmGrid4,
+#               trControl = fitControl,
+#               data = train4)
+#tuneD4
+
+#gbmGrid5 = expand.grid(n.trees = c(90, 100, 110),
+#                       interaction.depth = c(13, 14, 15),
+#                       shrinkage = c(0.049, 0.05, 0.051),
+#                       n.minobsinnode = 1)
+
+#tuneD5 = train(SalePrice ~ .,
+#               method = "gbm",
+#               tuneGrid = gbmGrid5,
+#               trControl = fitControl,
+#               data = train4)
+#tuneD5
+
+gbmD2 = gbm(SalePrice ~ .,
+           distribution = "gaussian",
+           data = train4,
+           n.trees = 100,
+           shrinkage = 0.049,
+           interaction.depth = 14,
+           n.minobsinnode = 1)
+sol.gbmD2 = predict(gbmD2, newdata = train4, n.trees = 100)
+rmse(actual = train4$SalePrice, predicted = sol.gbmD2)
+
+```
+
+Clearly the tuned gbm on the dummy variables following variable selection did the best.
 
 ```{r}
 tenFoldCrossVal = function(formula, n = 10, data, type, nnn=1, ...){
