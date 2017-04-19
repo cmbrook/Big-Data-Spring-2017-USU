@@ -374,7 +374,7 @@ rmse(actual = train4$SalePrice, predicted = rfd1)
 
 ```
 
-```{r}
+```{r,include=FALSE}
 tenFoldCrossVal = function(formula, n = 10, data, type, nnn=1, ...){
   #n is the number of desired folds
   #data is the desired dataset
@@ -399,7 +399,7 @@ tenFoldCrossVal = function(formula, n = 10, data, type, nnn=1, ...){
                  ada = ada(formula, data = train, ...),
                  svm = svm(formula, data = train, ...),
                  gbm = gbm(formula, data = train, ...),
-                 neunet = neuralnet(formula,data=train,hidden=c(nnn)))
+                 neunet = neuralnet(formula,data=train,hidden=c(nnn)),stepmax=3e+05,lifesign="full",...)
         
     resultVector[folds == i] = switch(type,
                                       rpart = predict(fit, newdata = test, ...),
@@ -418,7 +418,15 @@ tenFoldCrossVal = function(formula, n = 10, data, type, nnn=1, ...){
 ```
 
 
+```{r,include=FALSE}
+unscale_unlog_nn_prediction<-function(data,ref) {
+    exp(data*sd(ref)+mean(ref))-1
+}
+```
+
+
 ```{r neural net}
+
 
 
 train_dum<-encode_categorical_variables(train2)
@@ -444,11 +452,21 @@ hnn_20nodes_t<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(10,10),linear.ou
 #this one works after 11 minutes
 hnn_25nodes<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(15,10),linear.output=T,rep=1,stepmax=3e+05,lifesign="full")
 
-nn_cv_1node<-tenFoldCrossVal(formula=nn_form,data=train_dum_scaled,type="neunet",nnn=1)
+#cross validation doesn't work
+nn_cv_25node<-tenFoldCrossVal(formula=nn_form,data=train_dum_scaled,type="neunet",nnn=c(15,10))
 
-nn_unscaled<-nn_cv_1node*sd(train_dum_reduced$SalePrice)+mean(train_dum_reduced$SalePrice)
+#didn't converge
+hnn_25n4L<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(12,8,4,2),linear.output=T,rep=1,stepmax=3e+05,lifesign="full")
 
-RMSE<-sqrt(sum((train_dum_reduced$SalePrice - nn_unscaled)**2)/1460) 
+#converged
+hhn_48n<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(15),linear.output=T,rep=1,stepmax=3e+05,lifesign="full")
+
+#but cross validation doesn't work
+hhn_15_cv<-tenFoldCrossVal(formula=nn_form,data=train_dum_scaled,type="neunet",nnn=c(15),output=T,stepmax=3e+05,lifesign="full")
+
+nn_15_prediction_train<-unscale_unlog_nn_prediction(compute(hhn_48n,covariate=select(train_dum_scaled,-SalePrice))$net.result,train_dum_reduced_log$SalePrice)
+
+RMSE<-sqrt(sum((train_dum_reduced$SalePrice - nn_15_prediction_train)**2)/1460) 
 
 #RMSE is extremely bad
 
@@ -460,15 +478,14 @@ test_dum_reduced<-test_dum[,reduced_vars]
 
 test_dum_scaled<-scale(test_dum_reduced)
 
-prediction_nn<-compute(hnn1,covariate=test_dum_scaled)$net.result
+prediction_nn_un<-compute(hhn_48n,covariate=test_dum_scaled)$net.result
 
-prediction_nn<-prediction_nn*sd(train$SalePrice)+mean(train$SalePrice)
+prediction_nn<-unscale_unlog_nn_prediction(prediction_nn_un,train_dum_reduced_log$SalePrice)
+
 submission_nn<-data.frame(test$Id,prediction_nn)
 colnames(submission_nn)<-c("ID","SalePrice")
 
-
-
-write.csv(submission_nn,"submission_nn.csv",row.names = FALSE)
+write.csv(submission_nn,"submission_nn_15.csv",row.names = FALSE)
 
 ```
 
