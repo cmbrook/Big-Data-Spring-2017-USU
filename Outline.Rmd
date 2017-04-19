@@ -477,6 +477,12 @@ write.csv(file = 'submissionGBMDummy.csv', x = submission, row.names = FALSE)
 
 ```
 
+The GBM with random forest variable selection and no dummy variables gave a kaggle result of 0.16.
+
+The GBM with lasso variable selection and using dummy variables gave a Kaggle result of 0.14.
+
+Neither is better than the linear regression result.
+
 ```{r}
 tenFoldCrossVal = function(formula, n = 10, data, type, nnn=1, ...){
   #n is the number of desired folds
