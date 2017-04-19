@@ -572,3 +572,74 @@ write.csv(submission_nn,"submission_nn.csv",row.names = FALSE)
 ```
 
 RMLSE for the 1 node, 1 layer neural net is .16521
+
+
+#Random thing
+
+I want to run a tuned GBM without variable selection, using the original variables and with a few differences for the missing values.
+
+```{r randomMissingValues, cache = TRUE}
+#the following code was taken from stackoverflow.com
+for (Var in names(train)) {
+    missing <- sum(is.na(train[,Var]))
+    if (missing > 0) {
+        print(c(Var,missing))
+    }
+}
+
+```
+
+After further research, I will try to tune GBM without changing the missing values.
+
+```{r gbmWithMissing, cache = TRUE}
+#Slpit the training data into a training and validation set for tuning purposes
+train01 = deal_missing_values(train, ntrain = 1460)
+train0 = encode_categorical_variables(train01, ntrain = 1460)
+
+set = rep(c(1:3), length = nrow(train))
+set = sample(set)
+trainV = train0[set == 1 | set == 2,]
+valV = train0[set == 3,]
+
+#check missing with split data
+for (Var in names(trainV)) {
+    missing <- sum(is.na(trainV[,Var]))
+    if (missing > 0) {
+        print(c(Var,missing))
+    }
+}
+
+for (Var in names(valV)) {
+    missing <- sum(is.na(valV[,Var]))
+    if (missing > 0) {
+        print(c(Var,missing))
+    }
+}
+
+#I cannot tune with missing values so I will fix that
+
+#run GBM on the training data
+gbm = gbm(SalePrice ~ . -Id,
+          distribution = "gaussian",
+          n.trees = 100,
+          data = trainV)
+
+#tune GBM on the validation data
+fitControl = trainControl(method = "cv", number = 10)
+gbmGridF1 = expand.grid(n.trees = c(25, 50, 75, 100),
+                        interaction.depth = c(10, 12, 14, 16),
+                        shrinkage = c(0.01, 0.05, 0.1, 0.2),
+                        n.minobsinnode = 10)
+
+tuneF1 = train(SalePrice ~ . -Id,
+               method = "gbm",
+               tuneGrid = gbmGridF1,
+               trControl = fitControl,
+               data = valV)
+tuneF1
+
+#run the tuned on the full training set
+
+#run the tuned on the test set
+
+```
