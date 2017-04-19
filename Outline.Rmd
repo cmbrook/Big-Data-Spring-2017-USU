@@ -313,7 +313,6 @@ sol.gbm3 = predict(gbm3, newdata = train, n.trees = 90)
 rmse(actual = train$SalePrice, predicted = sol.gbm3)
 ```
 
-
 ```{r, include=FALSE}
 encode_categorical_variables <- function(dataSet, ntrain=1460)
 {
@@ -337,6 +336,7 @@ encode_categorical_variables <- function(dataSet, ntrain=1460)
 
 do_variable_selection <- function(dataSet)
 {
+  ntrain = 1460
   trainData <- dataSet[1:ntrain,]
   logSalePrice <- log(trainData$SalePrice)
   trainData <- cbind(trainData, logSalePrice)
@@ -359,11 +359,18 @@ do_variable_selection <- function(dataSet)
 }
 ```
 
-```{r svm, cache = TRUE}
+```{r randomForestDummy, cache = TRUE}
+train3 = encode_categorical_variables(train2, ntrain = 1460)
+train4 = do_variable_selection(train3)
 
+rfd1 = tenFoldCrossVal(SalePrice ~ .,
+                       n = 10,
+                       data = train4,
+                       type = "randomForest")
+rmse(actual = train4$SalePrice, predicted = rfd1)
 ```
 
-```{r svmTune, cache = TRUE}
+```{r gbmDummy, cache = TRUE}
 
 ```
 
