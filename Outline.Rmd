@@ -68,7 +68,7 @@ test <- read.csv('test.csv', sep = ',', header = TRUE)
 #Load Packages
 library(rpart)
 library(randomForest)
-#library(gbm)
+library(gbm)
 library(caret)
 library(e1071)
 library(dplyr)
@@ -399,7 +399,7 @@ tenFoldCrossVal = function(formula, n = 10, data, type, nnn=1, ...){
                  ada = ada(formula, data = train, ...),
                  svm = svm(formula, data = train, ...),
                  gbm = gbm(formula, data = train, ...),
-                 neunet = neuralnet(formula,data=train,hidden=c(nnn)),stepmax=3e+05,lifesign="full",...)
+                 neunet = neuralnet(formula,data=train,hidden=c(nnn)),stepmax=3e+05,lifesign="full",rep=5,...)
         
     resultVector[folds == i] = switch(type,
                                       rpart = predict(fit, newdata = test, ...),
@@ -435,7 +435,7 @@ train_dum_reduced<-do_variable_selection(train_dum)
 
 vrs<-names(train_dum_reduced)
 
-train_dum_reduced_log<-do_transform(train_dum_reduced)
+train_dum_reduced_log<-mutate(train_dum_reduced,SalePrice=log(SalePrice+1))
 
 vrs[!vrs %in% "SalePrice"]
 nn_form<-as.formula(paste("SalePrice ~", paste(vrs[!vrs %in% "SalePrice"],collapse= " + ")))
@@ -447,7 +447,12 @@ train_dum_scaled<-as.data.frame(scale(train_dum_reduced_log, center=T,scale=T))
 #doesn't converge with logistic activation function
 #hnn_20nodes<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(10,10),linear.output=T,rep=1,stepmax=3e+05,lifesign="full")
 
-hnn_20nodes_t<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(10,10),linear.output=T,rep=1,stepmax=3e+05,lifesign="full",act.fct = "tanh")
+hnn_20nodes_t<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(10,10),linear.output=T,rep=5,stepmax=5e+05,lifesign="full",act.fct = "tanh")
+
+hnn_20nodes_l_cv<-tenFoldCrossVal(formula=nn_form,data=train_dum_scaled,type="neunet",nnn=c(10,10))
+
+results<-hnn_20nodes_t$result.matrix
+
 
 #this one works after 11 minutes
 hnn_25nodes<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(15,10),linear.output=T,rep=1,stepmax=3e+05,lifesign="full")
@@ -482,6 +487,10 @@ prediction_nn_un<-compute(hhn_48n,covariate=test_dum_scaled)$net.result
 
 prediction_nn<-unscale_unlog_nn_prediction(prediction_nn_un,train_dum_reduced_log$SalePrice)
 
+prediction_nn_un_25t<-compute(hnn_20nodes_t,covariate=test_dum_scaled,rep=2)$net.result
+
+prediction_nn_25t<-unscale_unlog_nn_prediction(prediction_nn_un_25t,train_dum_reduced_log$SalePrice)
+
 submission_nn<-data.frame(test$Id,prediction_nn)
 colnames(submission_nn)<-c("ID","SalePrice")
 
@@ -489,4 +498,6 @@ write.csv(submission_nn,"submission_nn_15.csv",row.names = FALSE)
 
 ```
 
-RMLSE for the 1 node, 1 layer neural net is .16521
+We tried a variety of configurations for a neural net using a subset of predictors, and found very few configurations that converged consistently. 
+
+Even when the models converged with the entirety of the data, we could not achieve convergence for most of models using a 10-fold cross validation method. Since these models took an extremely long time to run and did not appear to have better predictive power than other methods, we decided not to use a neural net model for our final submission. 
