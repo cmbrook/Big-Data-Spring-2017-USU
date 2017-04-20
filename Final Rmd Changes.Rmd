@@ -1,0 +1,596 @@
+---
+title: "Housing Prices Pt 2"
+author: "Carla M Brookey, Fred Hintz, Kassidie Stokes, Thanh Tran"
+date: "April 11, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, cache = TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(56)
+```
+
+```{r 10foldFunction}
+tenFoldCrossVal = function(formula, n = 10, data, type, ...){
+  #n is the number of desired folds
+  #data is the desired dataset
+  #type is the type of analysis
+  #formula is the formula for analysis
+  
+  folds = rep(c(1:n), length = nrow(data))
+  folds = sample(folds)
+  
+  resultVector = rep(0, length(nrow(data)))
+  
+  for (i in 1:n){
+    train = data[folds!=i,]
+    test = data[folds==i,]
+    fit = switch(type,
+                 rpart = rpart(formula, data = train, ...),
+                 randomForest = randomForest(formula, data = train, ...),
+                 lda = lda(formula, data = train, ...),
+                 qda = qda(formula, data = train, ...),
+                 knn3 = knn3(formula, data = train, ...),
+                 glm = glm(formula, data = train, ...),
+                 ada = ada(formula, data = train, ...),
+                 svm = svm(formula, data = train, ...),
+                 gbm = gbm(formula, data = train, ...))
+    
+    resultVector[folds == i] = switch(type,
+                                      rpart = predict(fit, newdata = test, ...),
+                                      randomForest = predict(fit, newdata = test, ...),
+                                      lda = predict(fit, data = test, ...)$class,
+                                      qda = predict(fit, data = test, ...)$class,
+                                      knn3 = predict(fit, data = test, ...),
+                                      glm = predict(fit, data = test, ...),
+                                      ada = predict(fit, data = test, ...),
+                                      svm = predict(fit, data = test, ...),
+                                      gbm = predict(fit, data = test, ...))
+  }
+  return(resultVector)
+}
+
+reverse_transformed_response <- function(response)
+{
+  return(exp(response) - 1)
+}
+```
+
+## R Markdown
+
+Run with log(SalePrice).
+
+```{r load, cache = TRUE, warning = FALSE}
+#Load data
+train <- read.csv('train.csv', sep = ',', header = TRUE)
+test <- read.csv('test.csv', sep = ',', header = TRUE)
+
+#Load Packages
+library(rpart)
+library(randomForest)
+library(gbm)
+library(caret)
+library(e1071)
+library(dplyr)
+library(sparklyr)
+library(neuralnet)
+library(glmnet)
+library(ModelMetrics)
+```
+
+```{r rpart, cache = TRUE}
+
+#Carla's doing random forest + gbm and uploading the 10-fold cv code
+
+#than's doing xgboost 
+#kassidie's doing svm
+#Fred doing neural nets 
+
+
+#Create a validation set
+#' Splits data.frame into arbitrary number of groups
+#' 
+#' @param dat The data.frame to split into groups
+#' @param props Numeric vector. What proportion of the data should
+#'              go in each group?
+#' @param which.adjust Numeric. Which group size should we 'fudge' to
+#'              make sure that we sample enough (or not too much)
+split_data <- function(dat, props = c(.8, .15, .05), which.adjust = 1){
+
+    # Make sure proportions are positive
+    # and the adjustment group isn't larger than the number
+    # of groups specified
+    stopifnot(all(props >= 0), which.adjust <= length(props))
+
+    # could check to see if the sum is 1
+    # but this is easier
+    props <- props/sum(props)
+    n <- nrow(dat)
+    # How large should each group be?
+    ns <- round(n * props)
+    # The previous step might give something that
+    # gives sum(ns) > n so let's force the group
+    # specified in which.adjust to be a value that
+    # makes it so that sum(ns) = n
+    ns[which.adjust] <- n - sum(ns[-which.adjust])
+
+    ids <- rep(1:length(props), ns)
+    # Shuffle ids so that the groups are randomized
+    which.group <- sample(ids)
+    split(dat, which.group)
+}
+
+split = split_data(train, c(0.8, 0.2))
+train1 = split$'1'
+val1 = split$'2'
+
+full.tree = rpart(SalePrice ~ . -Id,
+                  data = train1,
+                  method = "anova",
+                  control = rpart.control(cp = 0.0, minsplit = 2))
+plotcp(full.tree)
+
+fit.tree = rpart(SalePrice ~ . -Id,
+                 data = train1,
+                 method = "anova",
+                 control = rpart.control(cp = 0.0055, minsplit = 2))
+
+sqrt(mean((val1$SalePrice - predict(fit.tree, val1, type = "vector"))^2))
+
+#Try again with the full dataset and the resubstitution error
+fit.tree1 = rpart(SalePrice ~ . -Id,
+                  data = train,
+                  method = "anova",
+                  control = rpart.control(cp = 0.0055, minsplit = 2))
+
+sqrt(mean((train$SalePrice - predict(fit.tree1, train, type = "vector"))^2))
+
+```
+Minimum xerror at cp
+46  1.299978e-03     47 8.908836e-02 0.2499940 0.02580239
+Using the 1 SE rule, we get
+18  5.573976e-03     17 1.643091e-01 0.2697831 0.02541736
+
+```{r randForests, cache = TRUE}
+#Must first deal with NA values
+deal_missing_values <- function(dataSet, ntrain = 1460, type = 1)
+{
+  # type is the replace method for numeric values. 
+  #if type = 1 --> using mean to replace.
+  #if type = 2 --> using median to replace.
+  dataSet[] <- lapply(dataSet, function(x){
+    # check if variables have a factor:
+    if(!is.factor(x)) {
+      #replace NA by mean
+      if (type == 1) x[is.na(x)] <- mean(x[1:1460], na.rm = TRUE) 
+      else if (type == 2) if (type == 1) x[is.na(x)] <- median(x[1:1460], na.rm = TRUE) 
+    }
+    else {
+      # otherwise include NAs into factor levels and change factor levels:
+      x <- factor(x, exclude=NULL)
+      levels(x)[is.na(levels(x))] <- "Missing"
+    }
+    return(x)
+  })
+  
+  return(dataSet)
+}
+
+train2 = deal_missing_values(train)
+
+randF = randomForest(log(SalePrice) ~ . -Id,
+                     data = train2,
+                     importance = TRUE)
+varImpPlot(randF)
+
+```
+
+Based on the variable importance plot, use OverallQual, Neighborhood, GrLivArea, ExterQual, TotalBsmtSF, GarageCars, GarageArea, x1stFlrSF, KitchenQual, and YearBuilt.
+
+```{r randFVarSelec, cache = TRUE}
+rf = tenFoldCrossVal(log(SalePrice) ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+                      TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+                      YearBuilt,
+                    n = 10,
+                    data = train2,
+                    type = "randomForest")
+sol = reverse_transformed_response(rf)
+rmse(actual = train$SalePrice, predicted = sol)
+
+rf2 = tenFoldCrossVal(SalePrice ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+                       TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+                       YearBuilt,
+                     n = 10,
+                     data = train2,
+                     type = "randomForest")
+rmse(actual = train$SalePrice, predicted = rf2)
+
+```
+
+Unfortunately, neither of these worked very well just on their own, with the selected variables.
+
+Now I'll try GBM on the selected variables.
+
+```{r gbm, cache = TRUE}
+#gbm = tenFoldCrossVal(log(SalePrice) ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+#                           TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+#                           YearBuilt,
+#                      n = 10,
+#                      data = train,
+#                      type = "gbm",
+#                      n.trees = 100)
+
+gbm1 = gbm(log(SalePrice) ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+                           TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+                           YearBuilt,
+           distribution = "gaussian",
+           data = train2,
+           n.trees = 100)
+sol.gbm1 = reverse_transformed_response(predict(gbm1, newdata = train, n.trees = 100))
+rmse(actual = train$SalePrice, predicted = sol.gbm1)
+
+gbm2 = gbm(SalePrice ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+                           TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+                           YearBuilt,
+           distribution = "gaussian",
+           data = train2,
+           n.trees = 100)
+sol.gbm2 = predict(gbm2, newdata = train, n.trees = 100)
+rmse(actual = train$SalePrice, predicted = sol.gbm2)
+
+```
+
+In the case of the tree based methods, the log transformed response is not going as well as the untransformed data.
+Further analysis will be completed without transforming SalePrice.
+
+```{r gbmTune, cache = TRUE}
+#fitControl = trainControl(method = "cv", number = 10)
+#gbmGrid1 = expand.grid(n.trees = c(25, 50, 75, 100),
+#                       interaction.depth = c(10, 12, 14, 16),
+#                       shrinkage = c(0.01, 0.05, 0.1, 0.2),
+#                       n.minobsinnode = 10)
+
+#tune1 = train(SalePrice ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+#                TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+#                YearBuilt,
+#              method = "gbm",
+#              tuneGrid = gbmGrid1,
+#              trControl = fitControl,
+#              data = train2)
+#tune1
+
+#gbmGrid2 = expand.grid(n.trees = c(90, 95, 100, 105),
+#                       interaction.depth = c(13, 14, 15),
+#                       shrinkage = c(0.04, 0.05, 0.06),
+#                       n.minobsinnode = 10)
+
+#tune2 = train(SalePrice ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+#                TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+#                YearBuilt,
+#              method = "gbm",
+#              tuneGrid = gbmGrid2,
+#              trControl = fitControl,
+#              data = train2)
+#tune2
+
+#gbmGrid3 = expand.grid(n.trees = c(85, 90, 95),
+#                       interaction.depth = c(12, 13, 14),
+#                       shrinkage = c(0.05, 0.055, 0.06),
+#                       n.minobsinnode = 10)
+
+#tune3 = train(SalePrice ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+#                TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+#                YearBuilt,
+#              method = "gbm",
+#              tuneGrid = gbmGrid3,
+#              trControl = fitControl,
+#              data = train2)
+#tune3
+
+#gbmGrid4 = expand.grid(n.trees = c(90, 95, 100),
+#                       interaction.depth = 13,
+#                       shrinkage = c(0.055, 0.06, 0.065),
+#                       n.minobsinnode = 10)
+
+#tune4 = train(SalePrice ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+#                TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+#                YearBuilt,
+#              method = "gbm",
+#              tuneGrid = gbmGrid4,
+#              trControl = fitControl,
+#              data = train2)
+#tune4
+
+gbm3 = gbm(SalePrice ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
+                           TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
+                           YearBuilt,
+           distribution = "gaussian",
+           data = train2,
+           n.trees = 90,
+           shrinkage = 0.055,
+           interaction.depth = 13)
+sol.gbm3 = predict(gbm3, newdata = train, n.trees = 90)
+rmse(actual = train$SalePrice, predicted = sol.gbm3)
+```
+
+```{r, include=FALSE}
+encode_categorical_variables <- function(dataSet, ntrain=1460)
+{
+  dataSetTemp <- dataSet
+  for (i in 1:ncol(dataSet)){
+    if (is.factor(dataSet[,i])) {
+      col_name = names(dataSet)[i]
+      t <- model.matrix(~ factor(dataSet[,i]) - 1)
+      dataSetTemp <- cbind(t[,2:ncol(t)], dataSetTemp)
+      new_col_names <- paste0(col_name, "_bit", seq(1, ncol(t) - 1))
+      names(dataSetTemp)[1:ncol(t) - 1] <- new_col_names
+    }
+  }
+  removed <- c()
+  for (i in 1:ncol(dataSetTemp)) {
+    if (is.factor(dataSetTemp[,i])) removed <- c(removed, i)
+  }
+  dataSetTemp <- dataSetTemp[, -removed]
+  return(dataSetTemp)
+}
+
+do_variable_selection <- function(dataSet)
+{
+  ntrain = 1460
+  trainData <- dataSet[1:ntrain,]
+  logSalePrice <- log(trainData$SalePrice)
+  trainData <- cbind(trainData, logSalePrice)
+  trainData$SalePrice <- NULL
+  trainData.cv.lasso = cv.glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
+                             y=as.matrix(trainData[,ncol(trainData)]), alpha = 1)
+  names(trainData.cv.lasso$lambda.1se)="Lambda 1 SE:"
+  trainData.cv.lasso$lambda.1se
+  trainData.lasso = glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
+                           y=as.matrix(trainData[,ncol(trainData)]), alpha = 1)
+  co <- coef(trainData.lasso, s = trainData.cv.lasso$lambda.1se)
+  co <- co[2:nrow(co),] #remove the coefficient of intercept, which is the first row
+  trainData <- trainData[, co > 0]
+  vars <- names(trainData)
+  print('Important variables:')
+  print(vars)
+  vars <- c(vars, 'SalePrice')
+  dataSet <- subset(dataSet, select = vars)
+  return(dataSet)
+}
+```
+
+```{r randomForestDummy, cache = TRUE}
+train3 = encode_categorical_variables(train2, ntrain = 1460)
+train4 = do_variable_selection(train3)
+
+rfd1 = tenFoldCrossVal(SalePrice ~ .,
+                       n = 10,
+                       data = train4,
+                       type = "randomForest")
+rmse(actual = train4$SalePrice, predicted = rfd1)
+```
+
+```{r gbmDummy, cache = TRUE}
+
+```
+
+```{r,include=FALSE}
+tenFoldCrossVal = function(formula, n = 10, data, type, nnn=1, ...){
+  #n is the number of desired folds
+  #data is the desired dataset
+  #type is the type of analysis
+  #formula is the formula for analysis
+  require(dplyr)
+  folds = rep(c(1:n), length = nrow(data))
+  folds = sample(folds)
+  
+  resultVector = rep(0, length(nrow(data)))
+  
+  for (i in 1:n){
+    train = data[folds!=i,]
+    test = data[folds==i,]
+    fit = switch(type,
+                 rpart = rpart(formula, data = train, ...),
+                 randomForest = randomForest(formula, data = train, ...),
+                 lda = lda(formula, data = train, ...),
+                 qda = qda(formula, data = train, ...),
+                 knn3 = knn3(formula, data = train, ...),
+                 glm = glm(formula, data = train, ...),
+                 ada = ada(formula, data = train, ...),
+                 svm = svm(formula, data = train, ...),
+                 gbm = gbm(formula, data = train, ...),
+                 neunet = neuralnet(formula,data=train,hidden=c(nnn),stepmax=3e+05,lifesign="full",rep=5,...) )
+        
+    resultVector[folds == i] = switch(type,
+                                      rpart = predict(fit, newdata = test, ...),
+                                      randomForest = predict(fit, newdata = test, ...),
+                                      lda = predict(fit, data = test, ...)$class,
+                                      qda = predict(fit, data = test, ...)$class,
+                                      knn3 = predict(fit, data = test, ...),
+                                      glm = predict(fit, data = test, ...),
+                                      ada = predict(fit, data = test, ...),
+                                      svm = predict(fit, data = test, ...),
+                                      gbm = predict(fit, data = test, ...),
+                                    neunet = compute(fit,covariate=select(test,-SalePrice))$net.result)
+  }
+  return(resultVector)
+}
+```
+
+
+```{r,include=FALSE}
+unscale_unlog_nn_prediction<-function(data,ref) {
+    exp(data*sd(ref)+mean(ref))-1
+}
+```
+
+
+```{r neural net}
+
+
+
+train_dum<-encode_categorical_variables(train2)
+ntrain<-1460
+train_dum_reduced<-do_variable_selection(train_dum)
+
+vrs<-names(train_dum_reduced)
+
+train_dum_reduced_log<-mutate(train_dum_reduced,SalePrice=log(SalePrice+1))
+
+vrs[!vrs %in% "SalePrice"]
+nn_form<-as.formula(paste("SalePrice ~", paste(vrs[!vrs %in% "SalePrice"],collapse= " + ")))
+
+hpmeans<-apply(train_dum_reduced,2,mean)
+
+train_dum_scaled<-as.data.frame(scale(train_dum_reduced_log, center=T,scale=T))
+
+#doesn't converge with logistic activation function
+#hnn_20nodes<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(10,10),linear.output=T,rep=1,stepmax=3e+05,lifesign="full")
+
+hnn_20nodes_t<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(10,10),linear.output=T,rep=5,stepmax=5e+05,lifesign="full",act.fct = "tanh")
+
+hnn_20nodes_l_cv<-tenFoldCrossVal(formula=nn_form,data=train_dum_scaled,type="neunet",nnn=c(10,10))
+
+results<-hnn_20nodes_t$result.matrix
+
+
+#this one works after 11 minutes
+hnn_25nodes<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(15,10),linear.output=T,rep=1,stepmax=3e+05,lifesign="full")
+
+#cross validation doesn't work
+nn_cv_25node<-tenFoldCrossVal(formula=nn_form,data=train_dum_scaled,type="neunet",nnn=c(15,10))
+
+#didn't converge
+hnn_25n4L<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(12,8,4,2),linear.output=T,rep=1,stepmax=3e+05,lifesign="full")
+
+#converged
+hhn_48n<-neuralnet(nn_form,data=train_dum_scaled,hidden=c(15),linear.output=T,rep=1,stepmax=3e+05,lifesign="full")
+
+#but cross validation doesn't work
+hhn_15_cv<-tenFoldCrossVal(formula=nn_form,data=train_dum_scaled,type="neunet",nnn=c(15),output=T,stepmax=3e+05,lifesign="full")
+
+nn_15_prediction_train<-unscale_unlog_nn_prediction(compute(hhn_48n,covariate=select(train_dum_scaled,-SalePrice))$net.result,train_dum_reduced_log$SalePrice)
+
+RMSE<-sqrt(sum((train_dum_reduced$SalePrice - nn_15_prediction_train)**2)/1460) 
+
+#RMSE is extremely bad
+
+test1<-deal_missing_values(test)
+test_dum<-encode_categorical_variables(test1)
+reduced_vars<-which(colnames(test_dum) %in% colnames(train_dum_reduced))
+
+test_dum_reduced<-test_dum[,reduced_vars]
+
+test_dum_scaled<-scale(test_dum_reduced)
+
+prediction_nn_un<-compute(hhn_48n,covariate=test_dum_scaled)$net.result
+
+prediction_nn<-unscale_unlog_nn_prediction(prediction_nn_un,train_dum_reduced_log$SalePrice)
+
+prediction_nn_un_25t<-compute(hnn_20nodes_t,covariate=test_dum_scaled,rep=2)$net.result
+
+prediction_nn_25t<-unscale_unlog_nn_prediction(prediction_nn_un_25t,train_dum_reduced_log$SalePrice)
+
+submission_nn<-data.frame(test$Id,prediction_nn)
+colnames(submission_nn)<-c("ID","SalePrice")
+
+write.csv(submission_nn,"submission_nn_15.csv",row.names = FALSE)
+
+```
+
+We tried a variety of configurations for a neural net using a subset of predictors, and found very few configurations that converged consistently. 
+
+Even when the models converged with the entirety of the data, we could not achieve convergence for most of models using a 10-fold cross validation method. Since these models took an extremely long time to run and did not appear to have better predictive power than other methods, we decided not to use a neural net model for our final submission. 
+```{r SVM}
+grid1 = expand.grid(C=10^(-3:3))
+grid1 = expand.grid(C=10^(-3:3),
+                    sigma = c(.001, .01, .05, .1, .15 ))
+  
+tuned.svm.linear=train( x = train4$SalePrice,
+                        y = train4[,-c(SalePrice)],
+                        preProcess = c("center", "scale"),
+                        method = 'svmLinear',
+                        trControl = trainControl(method = 'cv',
+                                                 number = 10
+                                                 ),
+                        tuneGrid = grid1) 
+
+tuned.svm.linear=train( x = train4$SalePrice,
+                        y = train4[,-c(SalePrice)],
+                        preProcess = c("center"),
+                        method = 'svmLinear',
+                        trControl = trainControl(method = 'cv',
+                                                 number = 10
+                        ),
+                        tuneGrid = grid1)
+  
+tuned.svm.radial=tuned.svm.linear=train( x = train4$SalePrice,
+                                         y = train4[,-c(SalePrice)],
+                                         preProcess = c("center", "scale"),
+                                         method = 'svmRadial',
+                                         trControl = trainControl(method = 'cv',
+                                                                  number = 10
+                                         ),
+                                         tuneGrid = grid2)
+
+tuned.svm.radial=tuned.svm.linear=train( x = train4$SalePrice,
+                                         y = train4[,-c(SalePrice)],
+                                         preProcess = c("center"),
+                                         method = 'svmRadial',
+                                         trControl = trainControl(method = 'cv',
+                                                                  number = 10
+                                         ),
+                                         tuneGrid = grid2)
+
+```
+
+After spending a lot of time tuning the SVM the best I could get was .44 crossvalidated RMSE.  I didn't think it was worth submitting on Kaggle.
+
+
+```{r}
+
+build_model <- function(train, type = 4, transformed = FALSE){
+    #xgboost here
+    param <- list(max.depth=12,eta=0.01,nthread = 8, silent=1,objective='reg:linear', alpha=1)
+    #param <- list(max.depth = 4,verbose = FALSE, eta = 0.1, nthread = 8, objective = "binary:logistic",task="pred")
+    dataAll <- xgb.DMatrix(data=data.matrix(train[,1:(ncol(train)-1)]), 
+                           label=data.matrix(train[,ncol(train)]))
+    
+    res <- xgb.cv(params = param, data = dataAll,  nrounds = 1000, nfold = 10, 
+                  prediction = TRUE, eval_metric="rmse", verbose = FALSE)
+    max_round = which.min(res$dt[, test.rmse.mean])
+    print(max_round)
+    rmse <- res$dt[, test.rmse.mean][max_round]
+    
+    fit <- xgboost(params = param, data=dataAll, nrounds = max_round, verbose=FALSE)
+}
+
+print ('Building xgboost model')
+lm.model <- lm(SalePrice~., train)
+test$SalePrice <- predict(lm.model, test)
+nrow_test <- nrow(test)
+nrow_train <- nrow(train)
+combined <- rbind(train, test)
+
+combined.xgb_model <- build_model(combined, type = 4)
+fitone.xgb.rmse = rmse(actual = combined$SalePrice, predicted = predict(combined.xgb_model,
+                                                                        xgb.DMatrix(data=data.matrix(
+                                                                          combined[,1:(ncol(combined)-1)]))))
+print(fitone.xgb.rmse)
+test$SalePrice <- reverse_transformed_response(
+                          predict(combined.xgb_model, xgb.DMatrix(data=data.matrix(
+                            test[,1:(ncol(test)-1)]))))
+submission <- data.frame(Id <- test.Id, SalePrice <- test$SalePrice)
+names(submission) <- c('Id', 'SalePrice')
+write.csv(file = 'submission_xgb.csv', x = submission, row.names = FALSE)
+
+```
+
+XGBoost had the best results of the methods we tried.  When submiting it to kaggle we got an RMSE of 0.1602 and placed 925
+
+
+
+
+
+
+
