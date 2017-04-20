@@ -123,11 +123,12 @@ encode_categorical_variables <- function(dataSet, ntrain=1460)
 do_variable_selection <- function(dataSet, alpha = 0, printImportantVars = FALSE)
 {
   trainData <- dataSet[1:ntrain,]
-  logSalePrice <- log(trainData$SalePrice)
-  trainData <- cbind(trainData, logSalePrice)
-  trainData$SalePrice <- NULL
-  trainData.cv.lasso = cv.glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
+  trainData$SalePrice <- log(trainData$SalePrice)
+  trainData.cv.lasso = cv.glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]),
                                  y=as.matrix(trainData[,ncol(trainData)]), alpha = 0.3)
+  # trainData.cv.lasso = glmnet(x = as.matrix(trainData[,1:(ncol(trainData) - 1)]), 
+  #                             y=as.matrix(trainData[,ncol(trainData)]), 
+  #                             alpha = 1, lambda = 0.001)
   
   # co <- coef(trainData.cv.lasso, s = "lambda.1se")
   co <- coef(trainData.cv.lasso, s = "lambda.min")
@@ -138,7 +139,9 @@ do_variable_selection <- function(dataSet, alpha = 0, printImportantVars = FALSE
     print('Important variables:')
     print(vars)
   }
-  vars <- c(vars, 'SalePrice')
+  if (!'SalePrice' %in% names(trainData)){
+    vars <- c(vars, 'SalePrice')
+  }
   dataSet <- subset(dataSet, select = vars)
   return(dataSet)
 }
@@ -205,19 +208,35 @@ build_model <- function(train, type = 2, transformed = FALSE)
     # fit$predicted <- as.vector(fit$predicted)
   }
   if (type == 4) {
-    #xgboost here
-    param <- list(max.depth=12,eta=0.01,nthread = 8, silent=1,objective='reg:linear', alpha=1)
-    #param <- list(max.depth = 4,verbose = FALSE, eta = 0.1, nthread = 8, objective = "binary:logistic",task="pred")
-    dataAll <- xgb.DMatrix(data=data.matrix(train[,1:(ncol(train)-1)]), 
+    dataAll <- xgb.DMatrix(data=data.matrix(train[,1:(ncol(train)-1)]),
                            label=data.matrix(train[,ncol(train)]))
+    # #xgboost here
+    # param <- list(max.depth=12,eta=0.01,nthread = 8, silent=1,objective='reg:linear', alpha=1)
+    # #param <- list(max.depth = 4,verbose = FALSE, eta = 0.1, nthread = 8, objective = "binary:logistic",task="pred")
     
-    res <- xgb.cv(params = param, data = dataAll,  nrounds = 1000, nfold = 10, 
-                  prediction = TRUE, eval_metric="rmse", verbose = FALSE)
-    max_round = which.min(res$dt[, test.rmse.mean])
-    print(max_round)
-    rmse <- res$dt[, test.rmse.mean][max_round]
+    # 
+    # res <- xgb.cv(params = param, data = dataAll,  nrounds = 1000, nfold = 10, 
+    #               prediction = TRUE, eval_metric="rmse", verbose = FALSE)
+    # max_round = which.min(res$dt[, test.rmse.mean])
+    # print(max_round)
+    # rmse <- res$dt[, test.rmse.mean][max_round]
+    # 
+    # fit <- xgboost(params = param, data=dataAll, nrounds = max_round, verbose=FALSE)
     
-    fit <- xgboost(params = param, data=dataAll, nrounds = max_round, verbose=FALSE)
+    xgb_params = list(
+      booster = 'gbtree',
+      objective = 'reg:linear',
+      colsample_bytree=1,
+      eta=0.005,
+      max_depth=12,
+      min_child_weight=3,
+      alpha=0.3,
+      lambda=0.4,
+      gamma=0.01,
+      subsample=0.6,
+      seed=5,
+      silent=TRUE)
+    fit = xgb.train(xgb_params,dataAll, nrounds = 2000)
   }
   if (type != 4) {
     fit$actual <- train$SalePrice
@@ -344,18 +363,18 @@ write.csv(file = 'submission_lm.csv', x = submission, row.names = FALSE)
 # HP.train.glmnet_model <- build_model(HP.train, type = 2)
 # 
 # 
-# 
-print ('Building random forest model')
-lm.model <- lm(SalePrice~., HP.train)
-HP.test$SalePrice <- predict(lm.model, HP.test)
-nrow_test <- nrow(HP.test)
-nrow_train <- nrow(HP.train)
-HP.combined <- rbind(HP.train, HP.test)
-HP.combined.rf_model <- build_model(HP.combined, type = 3)
-HP.test$SalePrice <- reverse_transformed_response(predict(HP.combined.rf_model, HP.test))
-submission <- data.frame(Id <- HP.test.Id, SalePrice <- HP.test$SalePrice)
-names(submission) <- c('Id', 'SalePrice')
-write.csv(file = 'submission_rf.csv', x = submission, row.names = FALSE)
+ 
+# print ('Building random forest model')
+# lm.model <- lm(SalePrice~., HP.train)
+# HP.test$SalePrice <- predict(lm.model, HP.test)
+# nrow_test <- nrow(HP.test)
+# nrow_train <- nrow(HP.train)
+# HP.combined <- rbind(HP.train, HP.test)
+# HP.combined.rf_model <- build_model(HP.combined, type = 3)
+# HP.test$SalePrice <- reverse_transformed_response(predict(HP.combined.rf_model, HP.test))
+# submission <- data.frame(Id <- HP.test.Id, SalePrice <- HP.test$SalePrice)
+# names(submission) <- c('Id', 'SalePrice')
+# write.csv(file = 'submission_rf.csv', x = submission, row.names = FALSE)
 
 print ('Building xgboost model')
 lm.model <- lm(SalePrice~., HP.train)
