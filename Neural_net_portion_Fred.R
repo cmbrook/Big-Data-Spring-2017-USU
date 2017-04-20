@@ -59,13 +59,10 @@ test_dum_reduced<-test_dum[,reduced_vars]
 
 test_dum_scaled<-scale(test_dum_reduced)
 
-prediction_nn_un<-compute(hhn_48n,covariate=test_dum_scaled)$net.result
+prediction_nn_un<-compute(nn_onenode,covariate=test_dum_scaled)$net.result
 
 prediction_nn<-unscale_unlog_nn_prediction(prediction_nn_un,train_dum_reduced_log$SalePrice)
 
-prediction_nn_un_25t<-compute(hnn_20nodes_t,covariate=test_dum_scaled,rep=2)$net.result
-
-prediction_nn_25t<-unscale_unlog_nn_prediction(prediction_nn_un_25t,train_dum_reduced_log$SalePrice)
 
 submission_nn<-data.frame(test$Id,prediction_nn)
 colnames(submission_nn)<-c("ID","SalePrice")
