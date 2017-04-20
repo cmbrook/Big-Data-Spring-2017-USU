@@ -151,6 +151,8 @@ Minimum xerror at cp
 Using the 1 SE rule, we get
 18  5.573976e-03     17 1.643091e-01 0.2697831 0.02541736
 
+Trying to use Ragression and Classification Trees gave a less than useful result and will not be pursued further.
+
 ```{r randForests, cache = TRUE}
 #Must first deal with NA values
 deal_missing_values <- function(dataSet, ntrain = 1460, type = 1)
@@ -185,7 +187,7 @@ varImpPlot(randF)
 
 ```
 
-Based on the variable importance plot, use OverallQual, Neighborhood, GrLivArea, ExterQual, TotalBsmtSF, GarageCars, GarageArea, x1stFlrSF, KitchenQual, and YearBuilt.
+Based on the variable importance plot from random forests, I will use OverallQual, Neighborhood, GrLivArea, ExterQual, TotalBsmtSF, GarageCars, GarageArea, x1stFlrSF, KitchenQual, and YearBuilt.
 
 ```{r randFVarSelec, cache = TRUE}
 rf = tenFoldCrossVal(log(SalePrice) ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
@@ -207,19 +209,11 @@ rmse(actual = train$SalePrice, predicted = rf2)
 
 ```
 
-Unfortunately, neither of these worked very well just on their own, with the selected variables.
+Unfortunately, neither the log of SalePrice nor the SalePrice worked very well just on their own, with the selected variables.
 
 Now I'll try GBM on the selected variables.
 
 ```{r gbm, cache = TRUE}
-#gbm = tenFoldCrossVal(log(SalePrice) ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
-#                           TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
-#                           YearBuilt,
-#                      n = 10,
-#                      data = train,
-#                      type = "gbm",
-#                      n.trees = 100)
-
 gbm1 = gbm(log(SalePrice) ~ OverallQual + Neighborhood + GrLivArea +  ExterQual +
                            TotalBsmtSF + GarageCars + GarageArea + X1stFlrSF + KitchenQual +
                            YearBuilt,
@@ -313,6 +307,8 @@ sol.gbm3 = predict(gbm3, newdata = train, n.trees = 90)
 rmse(actual = train$SalePrice, predicted = sol.gbm3)
 ```
 
+The final tuned GBM with the selected variables indicated by Random Forests had tuned parameters or 90 trees, a shrinkage of 0.055, and interaction depth of 13.
+
 ```{r, include=FALSE}
 encode_categorical_variables <- function(dataSet, ntrain=1460)
 {
@@ -359,6 +355,8 @@ do_variable_selection <- function(dataSet)
 }
 ```
 
+Next I'll run Random Forests and GBM on the datasetw ith categorical varaibles encoded and varable selection completed by the lasso method.
+
 ```{r randomForestDummy, cache = TRUE}
 train3 = encode_categorical_variables(train2, ntrain = 1460)
 train4 = do_variable_selection(train3)
@@ -370,9 +368,117 @@ rfd1 = tenFoldCrossVal(SalePrice ~ .,
 rmse(actual = train4$SalePrice, predicted = rfd1)
 ```
 
-```{r gbmDummy, cache = TRUE}
+Random Forests didn't give worthwhile results and will not be further pursued.
 
+```{r gbmDummy, cache = TRUE}
+gbmD1 = gbm(SalePrice ~ .,
+            data = train4,
+            distrbution = "gaussian",
+            n.trees = 100)
+
+sol.gbmD1 = predict(gbmD1, newdata = train3, n.trees = 100)
+rmse( actual = train$SalePrice, predicted = sol.gbmD1)
 ```
+
+This isn't great so let's see what turning does.
+
+```{r gbmD2, cache = TRUE}
+#fitControl = trainControl(method = "cv", number = 10)
+#gbmGrid1 = expand.grid(n.trees = c(25, 50, 75, 100),
+#                       interaction.depth = c(10, 12, 14, 16),
+#                       shrinkage = c(0.01, 0.05, 0.1, 0.2),
+#                       n.minobsinnode = 10)
+
+#tuneD1 = train(SalePrice ~ .,
+#               method = "gbm",
+#               tuneGrid = gbmGrid1,
+#               trControl = fitControl,
+#               data = train4)
+#tuneD1
+
+#gbmGrid2 = expand.grid(n.trees = c(90, 95, 100, 105, 110),
+#                       interaction.depth = c(13, 14, 15),
+#                       shrinkage = c(0.04, 0.05, 0.06),
+#                       n.minobsinnode = 10)
+
+#tuneD2 = train(SalePrice ~ .,
+#               method = "gbm",
+#               tuneGrid = gbmGrid2,
+#               trControl = fitControl,
+#               data = train4)
+#tuneD2
+
+#gbmGrid3 = expand.grid(n.trees = c(95, 100, 105),
+#                       interaction.depth = c(1, 5, 10),
+#                       shrinkage = c(0.04, 0.05, 0.06),
+#                       n.minobsinnode = 10)
+
+#tuneD3 = train(SalePrice ~ .,
+#               method = "gbm",
+#               tuneGrid = gbmGrid3,
+#               trControl = fitControl,
+#               data = train4)
+#tuneD3
+
+#gbmGrid4 = expand.grid(n.trees = 100,
+#                       interaction.depth = 14,
+#                       shrinkage = c(0.045, 0.05, 0.055),
+#                       n.minobsinnode = c(1, 5, 10))
+
+#tuneD4 = train(SalePrice ~ .,
+#               method = "gbm",
+#               tuneGrid = gbmGrid4,
+#               trControl = fitControl,
+#               data = train4)
+#tuneD4
+
+#gbmGrid5 = expand.grid(n.trees = c(90, 100, 110),
+#                       interaction.depth = c(13, 14, 15),
+#                       shrinkage = c(0.049, 0.05, 0.051),
+#                       n.minobsinnode = 10)
+
+#tuneD5 = train(SalePrice ~ .,
+#               method = "gbm",
+#               tuneGrid = gbmGrid5,
+#               trControl = fitControl,
+#               data = train4)
+#tuneD5
+
+gbmD2 = gbm(SalePrice ~ .,
+            distribution = "gaussian",
+            data = train4,
+            n.trees = 100,
+            shrinkage = 0.049,
+            interaction.depth = 14,
+            n.minobsinnode = 1)
+sol.gbmD2 = predict(gbmD2, newdata = train4, n.trees = 100)
+rmse(actual = train4$SalePrice, predicted = sol.gbmD2)
+```
+
+Clearly the tuned GBM on the dunny variables following variable selection did best.
+
+Now we'll run the test data through the two different tuned GBM models.
+
+```{r testStuff, cache = TRUE}
+test2 = deal_missing_values(dataSet = test, ntrain = 1459)
+test3 = encode_categorical_variables(test2, ntrain = 1459)
+
+test2$SalePrice <- predict(gbm3, test2, n.trees = 90)
+submission <- data.frame(Id <- test2$Id, SalePrice <- test2$SalePrice)
+names(submission) <- c('Id', 'SalePrice')
+write.csv(file = 'submissionGBM.csv', x = submission, row,names = FALSE)
+
+test3$SalePrice <- predict(gbmD2, test3, n.trees = 100)
+submission <- data.frame(Id <- test3$Id, SalePrice <- test3$SalePrice)
+names(submission) <- c('Id', 'SalePrice')
+write.csv(file = 'submissionGBMDummy.csv', x = submission, row,names = FALSE)
+```
+
+The GBM with random forest variable selection and no dummy variablesgave a Kaggle score of 0.16.
+
+The GBM with lasso variable selection and using dummy variables gave a Kaggle score of 0.14.
+
+Neither is better than the linear regression result.
 
 ```{r,include=FALSE}
 tenFoldCrossVal = function(formula, n = 10, data, type, nnn=1, ...){
