@@ -291,40 +291,40 @@ HP.all$YearRemodAdd <- NULL
 HP.all$YrSold <- NULL
 HP.all$MoSold <- NULL
 #************************************************************************************************************************************#
-best_alpha = 0.0
+best_alpha = 0.8
 min_rmse = 1
-for (alpha in seq(0,1,0.1)) {
-  HP.all.selected <- do_variable_selection(HP.all, alpha = alpha)
-  HP.all.selected <- do_transform(HP.all.selected)
-  
-  HP.train = HP.all.selected[1:ntrain,]
-  HP.train <- HP.train[-c(463,524,633,826,1299,1325) , ]
-  HP.test = HP.all.selected[(ntrain+1) : nrow(HP.all.selected),]
-  HP.test$SalePrice <- NULL
-  
-  # fit one:
-  model <- lm(SalePrice~., HP.train)
-  fitone.lm.rmse = rmse(actual = HP.train$SalePrice, predicted = predict(model, HP.train))
-  print(paste0('alpha = ', alpha, ' -> fit one -> ', fitone.lm.rmse))
-  #build 10 fold cross validation for HP.train
-  HP.train.yval = rep(0, nrow(HP.train))
-  xvs=rep(1:10, length=nrow(HP.train))
-  xvs=sample(xvs)
-  lm.models <- c()
-  for (i in 1:10){
-    train = HP.train[xvs != i,]
-    test = HP.train[xvs == i,]
-    lm.model <- lm(SalePrice ~., train)
-    HP.train.yval[xvs == i] = predict(lm.model, test)
-    lm.models <- c(lm.models, lm.model)
-  }
-  lm.RMSE <- rmse(actual = HP.train$SalePrice, predicted = HP.train.yval)
-  print(paste0('alpha = ', alpha, ' -> 10 folds -> ', lm.RMSE))
-  if (lm.RMSE < min_rmse) {
-    min_rmse = lm.RMSE
-    best_alpha = alpha
-  }
-}
+# for (alpha in seq(0,1,0.1)) {
+#   HP.all.selected <- do_variable_selection(HP.all, alpha = alpha)
+#   HP.all.selected <- do_transform(HP.all.selected)
+#   
+#   HP.train = HP.all.selected[1:ntrain,]
+#   HP.train <- HP.train[-c(463,524,633,826,1299,1325) , ]
+#   HP.test = HP.all.selected[(ntrain+1) : nrow(HP.all.selected),]
+#   HP.test$SalePrice <- NULL
+#   
+#   # fit one:
+#   model <- lm(SalePrice~., HP.train)
+#   fitone.lm.rmse = rmse(actual = HP.train$SalePrice, predicted = predict(model, HP.train))
+#   print(paste0('alpha = ', alpha, ' -> fit one -> ', fitone.lm.rmse))
+#   #build 10 fold cross validation for HP.train
+#   HP.train.yval = rep(0, nrow(HP.train))
+#   xvs=rep(1:10, length=nrow(HP.train))
+#   xvs=sample(xvs)
+#   lm.models <- c()
+#   for (i in 1:10){
+#     train = HP.train[xvs != i,]
+#     test = HP.train[xvs == i,]
+#     lm.model <- lm(SalePrice ~., train)
+#     HP.train.yval[xvs == i] = predict(lm.model, test)
+#     lm.models <- c(lm.models, lm.model)
+#   }
+#   lm.RMSE <- rmse(actual = HP.train$SalePrice, predicted = HP.train.yval)
+#   print(paste0('alpha = ', alpha, ' -> 10 folds -> ', lm.RMSE))
+#   if (lm.RMSE < min_rmse) {
+#     min_rmse = lm.RMSE
+#     best_alpha = alpha
+#   }
+# }
 print(paste0('best_alpha = ', best_alpha))
 HP.all.selected <- do_variable_selection(HP.all, alpha = best_alpha)
 HP.all.selected <- do_transform(HP.all.selected)
@@ -394,3 +394,64 @@ HP.test$SalePrice <- reverse_transformed_response(
 submission <- data.frame(Id <- HP.test.Id, SalePrice <- HP.test$SalePrice)
 names(submission) <- c('Id', 'SalePrice')
 write.csv(file = 'submission_xgb.csv', x = submission, row.names = FALSE)
+
+
+
+############### STACKING #############################################################
+library(gbm)
+idx = createDataPartition(1:nrow(HP.train), p = .85, list = F)
+nvars = ncol(HP.train) - 1 
+# train.x = HP.train[,1:nvars]
+# train.y = HP.train[,ncol(HP.train)]
+train.x = HP.combined[,1:nvars]
+train.y = HP.combined[,ncol(HP.train)]
+train_sub.x = train.x[idx,]
+train_sub.y = train.y[idx]
+valid.x = train.x[-idx,]
+valid.y = train.y[-idx]
+
+resGLM = glmnet(as.matrix(train_sub.x), train_sub.y, lambda = .001, alpha = 1)
+resGBM = gbm.fit(train_sub.x, train_sub.y, distribution = "gaussian", n.trees = 2000, 
+                 interaction.depth = 5, shrinkage = .005, n.minobsinnode = 15)
+resLM <- lm(SalePrice~., cbind(train_sub.x, SalePrice = train_sub.y))
+
+res = data.frame(
+  gbm   = predict(resGBM, train_sub.x, n.trees = 2000),
+  lasso = as.vector(predict(resGLM, as.matrix(train_sub.x))),
+  lm     = predict(resLM, train_sub.x)
+)
+
+res.valid = data.frame(
+  gbm   = predict(resGBM, valid.x, n.trees = 2000),
+  lasso = as.vector(predict(resGLM, as.matrix(valid.x))),
+  lm = predict(resLM, valid.x)
+)
+
+train_sub_stack.x = cbind(train_sub.x, res[, c("lasso", "gbm", "lm")])
+valid_stack.x = cbind(valid.x, res.valid[, c("lasso", "gbm", "lm")])
+
+# resRF = randomForest(x = train_sub_stack.x, y = train_sub.y, ntree = 1000)
+resRF = build_model(cbind(train_sub_stack.x, train_sub.y), type=4)
+# res$pred = predict(resRF, train_sub_stack.x)
+res$pred = predict(resRF, xgb.DMatrix(data=data.matrix(train_sub_stack.x)))
+sqrt(mean((res$pred - train_sub.y)**2))
+
+res.valid$pred = predict(resRF, xgb.DMatrix(data=data.matrix(valid_stack.x)))
+sqrt(mean(( res.valid$pred - valid.y)**2))
+
+test <- HP.test[,1:(ncol(HP.test) -1)]
+pred_lasso = predict(resGLM, as.matrix(test))
+pred_gbm = predict(resGBM, as.matrix(test), n.trees = 2000)
+pred_lm = predict(resLM, test)
+tmp = data.frame(pred_lasso, pred_gbm, pred_lm)
+colnames(tmp) = c("lasso", "gbm", "lm")
+
+
+tmp = cbind(test, tmp)
+# pred_rf = predict(resRF, tmp)
+pred_rf <- predict(resRF, xgb.DMatrix(data=data.matrix(tmp)))
+pred_rf = reverse_transformed_response(pred_rf)
+
+submission <- data.frame(Id <- HP.test.Id, SalePrice <- pred_rf)
+names(submission) <- c('Id', 'SalePrice')
+write.csv(file = 'submission_rf_stack_gbm_lasso.csv', x = submission, row.names = FALSE)
